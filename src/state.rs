@@ -4,13 +4,16 @@
 
 use std::ffi::OsString;
 
+use calloop::{EventLoop, LoopHandle, LoopSignal};
 use smithay::{desktop::{Space, Window}, input::{Seat, SeatState}, reexports::{ash::vk::Display, wayland_server::DisplayHandle}, wayland::{compositor::{CompositorClientState, CompositorState}, output::OutputManagerState, selection::data_device::DataDeviceState, shell::xdg::XdgShellState, shm::ShmState, socket::ListeningSocketSource}};
 // activate our implementations
 
 mod client_impls;
 mod compositor_impls;
 pub struct NocturaStates {    // this will contain data about our compositor as a whole
+    pub time: std::time::Instant,
     pub dh: DisplayHandle,
+    pub ls: LoopSignal,
     pub listen_source: ListeningSocketSource,
     pub socket_name: OsString,
     pub ss: SeatState<Self>,
