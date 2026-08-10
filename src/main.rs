@@ -3,7 +3,9 @@
 
 /* IMPORTS */
 mod state;
-use calloop::EventLoop;
+use std::sync::Arc;
+
+use calloop::{EventLoop, Interest, generic::Generic};
 use smithay::reexports::{wayland_server::Display};
 use tracing_subscriber;
 use calloop::LoopSignal;
@@ -14,13 +16,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>>  {
 //                                                 about whats happening ins the code, you can think of it
 //                                                 like a an auto println! log machine)
 
-    let mut event_loop: EventLoop<LoopSignal> = EventLoop::try_new().unwrap();   // make our loop
+    let mut event_loop: EventLoop<state::NocturaStates> = EventLoop::try_new().unwrap();   // make our loop
     let display: Display<state::NocturaStates> = Display::new()?;                // make our display
-    let noctura_comp = state::NocturaStates::try_new(&display, event_loop.get_signal());  // attempt for
+    let mut noctura_comp = state::NocturaStates::try_new(&display, &event_loop);  // attempt for
 //                                                                                  a new instance of our compositor
-    noctura_comp.start_win(event_loop.handle())?;                             // open the window through which we 
-//                                                                                   can see noctura compositor
-    event_loop.run(None, &mut event_loop.get_signal(), move |_| {
+
+
+    event_loop.handle().clone()
+        .insert_source(
+            Generic::new(display, Interest::READ, calloop::Mode::Level),
+            |_, display, state| {
+                // Safety: we don't drop the display
+                unsafe {
+                    display.get_mut().dispatch_clients(state).unwrap();
+                }
+                Ok(calloop::PostAction::Continue)
+            },
+        )
+        .unwrap();
+
+    {
+        state::start_win(&mut noctura_comp, event_loop.handle().clone());                             // open the window through which we 
+//                                                                                                      can see noctura compositor
+    }
+    event_loop.run(None, &mut noctura_comp, move |_| {
         // noctura compositor runs now
     })?;
     Ok(())

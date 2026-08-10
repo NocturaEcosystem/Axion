@@ -14,7 +14,6 @@ pub struct NocturaStates {    // this will contain data about our compositor as 
     pub time: std::time::Instant,
     pub dh: DisplayHandle,
     pub ls: LoopSignal,
-    pub listen_source: ListeningSocketSource,
     pub socket_name: OsString,
     pub ss: SeatState<Self>,
     pub seat: Seat<Self>,
@@ -27,11 +26,15 @@ pub struct NocturaStates {    // this will contain data about our compositor as 
 
 }
 
-
+#[derive(Default)]
 pub struct NocturaClients {  // this will contain data about our clients/apps
     pub comp_state: CompositorClientState,
 }
 
 pub struct NocturaSystem {   // this will contan data like number of worksapce, apps, etc.
 
+}
+
+pub fn start_win(comp: &mut NocturaStates, el: LoopHandle<NocturaStates>) {
+    compositor_impls::start_win(comp, el);
 }

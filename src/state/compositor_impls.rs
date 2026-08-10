@@ -1,6 +1,6 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
-use calloop::{EventLoop, LoopHandle, LoopSignal};
+use calloop::{EventLoop, Interest, LoopHandle, LoopSignal, {Mode as gMode}, generic::Generic};
 use smithay::{backend::{renderer::{damage::OutputDamageTracker, element::surface::WaylandSurfaceRenderElement}, session::Event, winit::{self, WinitEvent, WinitGraphicsBackend}}, delegate_compositor, delegate_data_device, delegate_output, delegate_seat, delegate_shm, delegate_xdg_shell, desktop::{Space, Window, space}, input::{Seat, SeatHandler, SeatState}, output::{Mode, Output, PhysicalProperties}, reexports::{ash::khr::display, wayland_server::{Client, Display, backend::Backend, protocol::{wl_buffer, wl_surface::WlSurface}}}, utils::{Rectangle, Transform::Flipped180}, wayland::{buffer::BufferHandler, compositor::{CompositorClientState, CompositorHandler, CompositorState}, output::{OutputHandler, OutputManagerState}, selection::{SelectionHandler, data_device::{ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDnDGrab, ServerDndGrabHandler}}, shell::xdg::{XdgShellHandler, XdgShellState}, shm::{ShmHandler, ShmState}, socket::ListeningSocketSource}};
 use smithay::backend::renderer::gles::GlesRenderer;
 
@@ -144,7 +144,7 @@ delegate_xdg_shell!(NocturaStates);
 */
 
 impl NocturaStates {
-    pub fn try_new(display: &Display<Self>, ls: LoopSignal) -> Self { // making a new instance of our compositor
+    pub fn try_new(display: &Display<Self>, el: &EventLoop<Self>) -> Self { // making a new instance of our compositor
         let time = std::time::Instant::now();
         let dh: smithay::reexports::wayland_server::DisplayHandle = display.handle(); // create a 'key' to let your compositor talk to wayland server
         let mut ss = SeatState::new();
@@ -155,8 +155,23 @@ impl NocturaStates {
         let dds = DataDeviceState::new::<Self>(&dh);
         let listen_source = ListeningSocketSource::new_auto().unwrap();
         let socket_name = listen_source.socket_name().to_os_string();
+        println!("SOCKET NAME: {:?}", socket_name);
         let xdg_state = XdgShellState::new::<Self>(&dh);
         let space = Space::default();
+
+
+        el.handle().clone()
+            .insert_source(listen_source, move |client_stream, _, state| {
+                // Inside the callback, you should insert the client into the display.
+                //
+                // You may also associate some data with the client when inserting the client.
+                state
+                    .dh
+                    .insert_client(client_stream, Arc::new(NocturaClients::default()))
+                    .unwrap();
+            })
+            .expect("Failed to init the wayland event source.");
+
 
 
 
@@ -165,8 +180,7 @@ impl NocturaStates {
         Self { // return the struct but first, populating it
             time,
             dh,
-            ls,
-            listen_source,
+            ls: el.get_signal(),
             socket_name,
             ss,
             seat,
@@ -183,82 +197,83 @@ impl NocturaStates {
         seat.add_keyboard(Default::default(), 200, 25).unwrap();
         seat.add_pointer();
     }
+}
 
-    pub fn start_win<'a>(mut self, el: LoopHandle<'a, LoopSignal>) -> Result<(), Box<dyn std::error::Error>> {
-        // this function is used to open the window through which you can see Noctura compositor
-        let (mut backend, winit) = winit::init::<GlesRenderer>()?;
-        let mut out_mode = Mode {
-            size: backend.window_size(),
-            refresh: 60000,
-        };
-        let output = Output::new(
-            "noctura".into(),
-            PhysicalProperties {
-                size: (0, 0).into(),
-                subpixel: smithay::output::Subpixel::Unknown,
-                // NOTE: add real monitor name + model in the non-nested version
-                make: "NocturaDisplay".into(),
-                model: "Nested".into(),
-            }
-        );
 
-        let _ = output.create_global::<Self>(&self.dh);
-        output.change_current_state(
-            Some(out_mode),
-            Some(Flipped180),      // NOTE: I currently dont know why i have to flip 
+pub fn start_win(comp: &mut NocturaStates, el: LoopHandle<NocturaStates>) -> Result<(), Box<dyn std::error::Error>> {
+    // this function is used to open the window through which you can see Noctura compositor
+
+    let (mut backend, winit) = winit::init::<GlesRenderer>()?;
+    let mut out_mode = Mode {
+        size: backend.window_size(),
+        refresh: 60000,
+    };
+    let output = Output::new(
+        "noctura".into(),
+        PhysicalProperties {
+            size: (0, 0).into(),
+            subpixel: smithay::output::Subpixel::Unknown,
+            // NOTE: add real monitor name + model in the non-nested version
+            make: "NocturaDisplay".into(),
+            model: "Nested".into(),
+        }
+    );
+
+    let _ = output.create_global::<NocturaStates>(&comp.dh);
+    output.change_current_state(
+        Some(out_mode),
+        Some(Flipped180),      // NOTE: I currently dont know why i have to flip 
 //                                                  the display, but for openGL you must do it, im not sure about other renderers
-            None,
-            Some((0, 0).into())
-        );
-        output.set_preferred(out_mode);
-        self.space.map_output(&output, (0, 0));
-        let mut damage_tracker = OutputDamageTracker::from_output(&output);
-        el.insert_source(winit, move |event, _, state| {
-            match event {
-                WinitEvent::CloseRequested => {
-                    self.ls.stop();
-                }
-                WinitEvent::Resized { size, scale_factor } => {
-                    out_mode.size = size;   // NOTE: find out why this dosent work
-                }
-                WinitEvent::Redraw => {
-                    let size = backend.window_size();
-                    let damage_space = Rectangle::from_size(size);
-                    let (renderer, mut framebuffer) = backend.bind().unwrap();
-                    
-                    let _ = space::render_output::<
-                        _,
-                        WaylandSurfaceRenderElement<GlesRenderer>,
-                        _,
-                        _
-                    >(
-                        &output, renderer, &mut framebuffer,
-                        1.0, 0, [&self.space],
-                        &[],
-                        &mut damage_tracker,
-                        [0.7, 0.1, 1.0, 1.0]
-                    ).unwrap();
+        None,
+        Some((0, 0).into())
+    );
+    output.set_preferred(out_mode);
+    comp.space.map_output(&output, (0, 0));
+    let mut damage_tracker = OutputDamageTracker::from_output(&output);
+    el.insert_source(winit, move |event, _, state| {
+        match event {
+            WinitEvent::CloseRequested => {
+                state.ls.stop();
+            }
+            WinitEvent::Resized { size, scale_factor } => {
+                out_mode.size = size;   // NOTE: find out why this dosent work
+            }
+            WinitEvent::Redraw => {
+                let size = backend.window_size();
+                let damage_space = Rectangle::from_size(size);
+                let (renderer, mut framebuffer) = backend.bind().unwrap();
+                
+                let _ = space::render_output::<
+                    _,
+                    WaylandSurfaceRenderElement<GlesRenderer>,
+                    _,
+                    _
+                >(
+                    &output, renderer, &mut framebuffer,
+                    1.0, 0, [&state.space],
+                    &[],
+                    &mut damage_tracker,
+                    [0.7, 0.1, 1.0, 1.0]
+                ).unwrap();
 
-                    drop(framebuffer); // Because framebuffer borrow backend, I cant mutably borrow it later when 
+                drop(framebuffer); // Because framebuffer borrow backend, I cant mutably borrow it later when 
 //                                        I have to submit the damaged frame. Hence, if i drop it, it will no longer exist
 //                                        which is fine since i already used it but more importantly, it will allow me to
 //                                        mutably borrow backend again to submit the damaged frame.
-                    backend.submit(Some(&[damage_space]));
+                backend.submit(Some(&[damage_space]));
 
-                    for win in self.space.elements() {
-                        win.send_frame(&output, self.time.elapsed(), Some(Duration::ZERO), |_, _| { 
-                            Some(output.clone())   // clone as &output already borrowed it
-                        });
-                    }
-
-                    self.space.refresh();
-                    self.dh.flush_clients();
-                    backend.window().request_redraw();
+                for win in state.space.elements() {
+                    win.send_frame(&output, state.time.elapsed(), Some(Duration::ZERO), |_, _| { 
+                        Some(output.clone())   // clone as &output already borrowed it
+                    });
                 }
-                _ => {}
-            }
-        }).unwrap();
-        Ok(())
-    }
-}
 
+                state.space.refresh();
+                state.dh.flush_clients();
+                backend.window().request_redraw();
+            }
+            _ => {}
+        }
+    }).unwrap();
+    Ok(())
+}
