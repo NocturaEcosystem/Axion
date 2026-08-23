@@ -1,10 +1,10 @@
 use std::{sync::Arc, time::Duration};
 
 use calloop::{EventLoop, Interest, LoopHandle, LoopSignal, {Mode as gMode}, generic::Generic};
-use smithay::{backend::{renderer::{damage::OutputDamageTracker, element::surface::WaylandSurfaceRenderElement}, session::Event, winit::{self, WinitEvent, WinitGraphicsBackend}}, delegate_compositor, delegate_data_device, delegate_output, delegate_seat, delegate_shm, delegate_xdg_shell, desktop::{Space, Window, space}, input::{Seat, SeatHandler, SeatState}, output::{Mode, Output, PhysicalProperties}, reexports::{ash::khr::display, wayland_server::{Client, Display, backend::Backend, protocol::{wl_buffer, wl_surface::WlSurface}}}, utils::{Rectangle, Transform::Flipped180}, wayland::{buffer::BufferHandler, compositor::{CompositorClientState, CompositorHandler, CompositorState}, output::{OutputHandler, OutputManagerState}, selection::{SelectionHandler, data_device::{ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDnDGrab, ServerDndGrabHandler}}, shell::xdg::{XdgShellHandler, XdgShellState}, shm::{ShmHandler, ShmState}, socket::ListeningSocketSource}};
+use smithay::{backend::{renderer::{damage::OutputDamageTracker, element::surface::WaylandSurfaceRenderElement, utils::on_commit_buffer_handler}, session::Event, winit::{self, WinitEvent, WinitGraphicsBackend}}, delegate_compositor, delegate_data_device, delegate_output, delegate_seat, delegate_shm, delegate_xdg_shell, desktop::{PopupManager, Space, Window, space}, input::{Seat, SeatHandler, SeatState}, output::{Mode, Output, PhysicalProperties}, reexports::{ash::khr::display, wayland_server::{Client, Display, Resource, backend::Backend, protocol::{wl_buffer, wl_surface::WlSurface}}}, utils::{Rectangle, Transform::Flipped180}, wayland::{buffer::BufferHandler, compositor::{CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface}, output::{OutputHandler, OutputManagerState}, selection::{SelectionHandler, data_device::{self, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDnDGrab, ServerDndGrabHandler}}, shell::xdg::{XdgShellHandler, XdgShellState}, shm::{ShmHandler, ShmState}, socket::ListeningSocketSource}};
 use smithay::backend::renderer::gles::GlesRenderer;
 
-use crate::{state::NocturaStates};
+use crate::{state::NocturaStates, utils::unconstrain_popups};
 use crate::state::NocturaClients;
 
 
@@ -27,7 +27,11 @@ impl SeatHandler for NocturaStates {
     fn cursor_image(&mut self, _seat: &Seat<Self>, _image: smithay::input::pointer::CursorImageStatus) {}
 
     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
-        //NOTE: ADD LATER
+        let client = focused.and_then(|surface| {
+            self.dh.get_client(surface.id()).ok()   // basically, if there was a surface, we need the client
+                                                    // this code gets the client who owns the surface
+        });
+        data_device::set_data_device_focus(&self.dh, seat, client);
     }
 }
 
@@ -42,10 +46,25 @@ impl CompositorHandler for NocturaStates {
         &client.get_data::<NocturaClients>().unwrap().comp_state
     }
 
-    fn commit(&mut self, _surface: &WlSurface) {
-        // NOTE: will do later
+    fn commit(&mut self, surface: &WlSurface) {
+        on_commit_buffer_handler::<Self>(surface);
+        if !is_sync_subsurface(surface) {
+            let mut root = surface.clone();
+            while let Some(parent) = get_parent(&root) {
+                root = parent;
+            }
+            if let Some(window) = self
+                .space
+                .elements()
+                .find(|w| w.toplevel().unwrap().wl_surface() == &root)
+            {
+                window.on_commit();
+            }
+        };
+        self.popups.commit(surface);
     }
 }
+
 
 impl ShmHandler for NocturaStates {
     fn shm_state(&self) -> &ShmState {
@@ -74,19 +93,29 @@ impl XdgShellHandler for NocturaStates {
     }
     
     fn new_toplevel(&mut self, surface: smithay::wayland::shell::xdg::ToplevelSurface) {
+        surface.send_configure(); // sending configure is like telling the client to have x,y dimentions, be minimized/maximized.....
         let win = Window::new_wayland_window(surface);
         self.space.map_element(win, (0, 0), false);
     }
 
     fn new_popup(&mut self, surface: smithay::wayland::shell::xdg::PopupSurface, positioner: smithay::wayland::shell::xdg::PositionerState) {
-        
+        unconstrain_popups::unconstrain_popups(&self, &surface);
+        surface.send_configure().expect(
+            "An error has occured while sending configuations to a popup...."); // same thing with the toplevel, just with a popup
+        let _ = self.popups.track_popup(smithay::desktop::PopupKind::Xdg(surface));
     }
 
     fn grab(&mut self, surface: smithay::wayland::shell::xdg::PopupSurface, seat: smithay::reexports::wayland_server::protocol::wl_seat::WlSeat, serial: smithay::utils::Serial) {
-        
+        // ??
     }
     fn reposition_request(&mut self, surface: smithay::wayland::shell::xdg::PopupSurface, positioner: smithay::wayland::shell::xdg::PositionerState, token: u32) {
-        
+        surface.with_pending_state(|state| {
+            let geometry = positioner.get_geometry();
+            state.geometry = geometry;
+            state.positioner = positioner;
+        });
+        unconstrain_popups::unconstrain_popups(&self, &surface);
+        surface.send_repositioned(token);
     }
 }
 
@@ -158,6 +187,7 @@ impl NocturaStates {
         println!("SOCKET NAME: {:?}", socket_name);
         let xdg_state = XdgShellState::new::<Self>(&dh);
         let space = Space::default();
+        let popups = PopupManager::default();
 
 
         el.handle().clone()
@@ -185,6 +215,7 @@ impl NocturaStates {
             ss,
             seat,
             output_manager,
+            popups,
             comp_state,
             shm_state,
             dds,

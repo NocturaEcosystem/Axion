@@ -4,6 +4,7 @@
 /* IMPORTS */
 mod state;
 use std::sync::Arc;
+mod utils;
 
 use calloop::{EventLoop, Interest, generic::Generic};
 use smithay::reexports::{wayland_server::Display};
