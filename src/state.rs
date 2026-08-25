@@ -35,7 +35,3 @@ pub struct NocturaClients {  // this will contain data about our clients/apps
 pub struct NocturaSystem {   // this will contan data like number of worksapce, apps, etc.
 
 }
-
-pub fn start_win(comp: &mut NocturaStates, el: LoopHandle<NocturaStates>) {
-    compositor_impls::start_win(comp, el);
-}

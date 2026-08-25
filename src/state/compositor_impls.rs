@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use calloop::{EventLoop, Interest, LoopHandle, LoopSignal, {Mode as gMode}, generic::Generic};
-use smithay::{backend::{renderer::{damage::OutputDamageTracker, element::surface::WaylandSurfaceRenderElement, utils::on_commit_buffer_handler}, session::Event, winit::{self, WinitEvent, WinitGraphicsBackend}}, delegate_compositor, delegate_data_device, delegate_output, delegate_seat, delegate_shm, delegate_xdg_shell, desktop::{PopupManager, Space, Window, space}, input::{Seat, SeatHandler, SeatState}, output::{Mode, Output, PhysicalProperties}, reexports::{ash::khr::display, wayland_server::{Client, Display, Resource, backend::Backend, protocol::{wl_buffer, wl_surface::WlSurface}}}, utils::{Rectangle, Transform::Flipped180}, wayland::{buffer::BufferHandler, compositor::{CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface}, output::{OutputHandler, OutputManagerState}, selection::{SelectionHandler, data_device::{self, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDnDGrab, ServerDndGrabHandler}}, shell::xdg::{XdgShellHandler, XdgShellState}, shm::{ShmHandler, ShmState}, socket::ListeningSocketSource}};
+use smithay::{backend::{input::{AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputEvent, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent}, renderer::{damage::OutputDamageTracker, element::surface::WaylandSurfaceRenderElement, utils::on_commit_buffer_handler}, winit::{self, WinitEvent, WinitGraphicsBackend, WinitInput}}, delegate_compositor, delegate_data_device, delegate_output, delegate_seat, delegate_shm, delegate_xdg_shell, desktop::{PopupManager, Space, Window, WindowSurfaceType, space}, input::{Seat, SeatHandler, SeatState, keyboard::FilterResult, pointer::{AxisFrame, ButtonEvent, MotionEvent}}, output::{Mode, Output, PhysicalProperties}, reexports::{ash::khr::display, wayland_server::{Client, Display, Resource, backend::Backend, protocol::{wl_buffer, wl_surface::WlSurface}}}, utils::{Rectangle, SERIAL_COUNTER, Transform::Flipped180}, wayland::{buffer::BufferHandler, compositor::{CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface}, output::{OutputHandler, OutputManagerState}, seat::WaylandFocus, selection::{SelectionHandler, data_device::{self, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDnDGrab, ServerDndGrabHandler}}, shell::xdg::{XdgShellHandler, XdgShellState}, shm::{ShmHandler, ShmState}, socket::ListeningSocketSource}, xwayland::xwm::WmWindowProperty::WindowType};
 use smithay::backend::renderer::gles::GlesRenderer;
 
 use crate::{state::NocturaStates, utils::unconstrain_popups};
@@ -228,83 +228,195 @@ impl NocturaStates {
         seat.add_keyboard(Default::default(), 200, 25).unwrap();
         seat.add_pointer();
     }
-}
 
-
-pub fn start_win(comp: &mut NocturaStates, el: LoopHandle<NocturaStates>) -> Result<(), Box<dyn std::error::Error>> {
-    // this function is used to open the window through which you can see Noctura compositor
-
-    let (mut backend, winit) = winit::init::<GlesRenderer>()?;
-    let mut out_mode = Mode {
-        size: backend.window_size(),
-        refresh: 60000,
-    };
-    let output = Output::new(
-        "noctura".into(),
-        PhysicalProperties {
-            size: (0, 0).into(),
-            subpixel: smithay::output::Subpixel::Unknown,
-            // NOTE: add real monitor name + model in the non-nested version
-            make: "NocturaDisplay".into(),
-            model: "Nested".into(),
-        }
-    );
-
-    let _ = output.create_global::<NocturaStates>(&comp.dh);
-    output.change_current_state(
-        Some(out_mode),
-        Some(Flipped180),      // NOTE: I currently dont know why i have to flip 
-//                                                  the display, but for openGL you must do it, im not sure about other renderers
-        None,
-        Some((0, 0).into())
-    );
-    output.set_preferred(out_mode);
-    comp.space.map_output(&output, (0, 0));
-    let mut damage_tracker = OutputDamageTracker::from_output(&output);
-    el.insert_source(winit, move |event, _, state| {
-        match event {
-            WinitEvent::CloseRequested => {
-                state.ls.stop();
+    pub fn handle_input(&mut self, e: InputEvent<WinitInput>) {
+        match e {
+            InputEvent::Keyboard { event, .. } => {
+                self.seat.get_keyboard().unwrap().input::<(), _>(
+                    self, event.key_code(), event.state(), SERIAL_COUNTER.next_serial(), event.time_msec(),
+                    |_, _, _| FilterResult::Forward
+                );
             }
-            WinitEvent::Resized { size, scale_factor } => {
-                out_mode.size = size;   // NOTE: find out why this dosent work
+            InputEvent::PointerMotionAbsolute { event } => {
+                let output = self.space.outputs().next().unwrap();
+                let output_geo = self.space.output_geometry(output).unwrap();
+                let pointer = self.seat.get_pointer().unwrap();
+                let pointer_position = event.position_transformed(output_geo.size) + output_geo.loc.to_f64();
+                let motionEvent = &MotionEvent {
+                    location: pointer_position,
+                    serial: SERIAL_COUNTER.next_serial(),
+                    time: event.time_msec(),
+                };
+                let focus = self.space.element_under(pointer_position).and_then(
+                    |(surface, loc)| {
+                        surface.surface_under(loc.to_f64(), WindowSurfaceType::ALL).map(
+                            |(surface, point)| {
+                                (surface, ((point + loc).to_f64()))
+                            }
+                        )
+                    }
+                );
+                pointer.motion(self, focus, motionEvent);
             }
-            WinitEvent::Redraw => {
-                let size = backend.window_size();
-                let damage_space = Rectangle::from_size(size);
-                let (renderer, mut framebuffer) = backend.bind().unwrap();
-                
-                let _ = space::render_output::<
-                    _,
-                    WaylandSurfaceRenderElement<GlesRenderer>,
-                    _,
-                    _
-                >(
-                    &output, renderer, &mut framebuffer,
-                    1.0, 0, [&state.space],
-                    &[],
-                    &mut damage_tracker,
-                    [0.7, 0.1, 1.0, 1.0]
-                ).unwrap();
-
-                drop(framebuffer); // Because framebuffer borrow backend, I cant mutably borrow it later when 
-//                                        I have to submit the damaged frame. Hence, if i drop it, it will no longer exist
-//                                        which is fine since i already used it but more importantly, it will allow me to
-//                                        mutably borrow backend again to submit the damaged frame.
-                backend.submit(Some(&[damage_space]));
-
-                for win in state.space.elements() {
-                    win.send_frame(&output, state.time.elapsed(), Some(Duration::ZERO), |_, _| { 
-                        Some(output.clone())   // clone as &output already borrowed it
-                    });
+            InputEvent::PointerButton { event } => {
+                let btn_state = event.state();
+                let pointer = self.seat.get_pointer().unwrap();
+                let kb = self.seat.get_keyboard().unwrap();
+                let serial = SERIAL_COUNTER.next_serial();
+                if btn_state == ButtonState::Pressed && !pointer.is_grabbed() {
+                    if let Some(window) = self.space.element_under(pointer.current_location()).map(|(w, _)| {
+                        w.clone()
+                    }) {
+                        self.space.raise_element(&window, true);
+                        kb.set_focus(self, Some(window.toplevel().unwrap().wl_surface().clone()), serial);
+                        self.space.elements().for_each(|window| {
+                            window.toplevel().unwrap().send_pending_configure();
+                        });
+                    } else {
+                        for window in self.space.elements() {
+                            window.set_activated(false);
+                            window.toplevel().unwrap().send_pending_configure();
+                        }
+                        kb.set_focus(self, None, serial);
+                    }
                 }
 
-                state.space.refresh();
-                state.dh.flush_clients();
-                backend.window().request_redraw();
+                pointer.button(self, &ButtonEvent {
+                    serial: serial,
+                    time: event.time_msec(),
+                    state: event.state(),
+                    button: event.button_code(),
+                });
+                pointer.frame(self);
+            }
+            InputEvent::PointerAxis { event } => {
+                /*
+                    using ratio " 15/120 " because:
+                        mouse: each noch (the clicking noise you hear when you scroll on a mouse) = 120units
+                        smtiahy: each noch = 15units
+                    think of it like the mouse using "meters" and smithay using "killometers"
+                    because 1km = 1000m, to turn m -> km, we multiply m by 1/1000
+                    but in this case,
+                    because 15smitahy units = 120 v120 mouse units, to turn v120->sm wemultiply by 15/120
+                */
+                let h_amnt = event.amount(Axis::Horizontal).unwrap_or_else(||{
+                    event.amount_v120(Axis::Horizontal).unwrap_or(0.0) * (15.0 / 120.0)
+                });
+                let v_amnt = event.amount(Axis::Vertical).unwrap_or_else(||{
+                    event.amount_v120(Axis::Vertical).unwrap_or(0.0) * (15.0 / 120.0)
+                });
+                let h_amnt_120 = event.amount_v120(Axis::Horizontal);
+                let v_amnt_120 = event.amount_v120(Axis::Vertical);
+
+                let mut frame = AxisFrame::new(event.time_msec()).source(event.source());
+                if h_amnt != 0.0 {
+                    frame = frame.relative_direction(Axis::Horizontal, event.relative_direction(Axis::Horizontal));
+                    frame = frame.value(Axis::Horizontal, h_amnt);
+                    if let Some(discrete) = h_amnt_120 {
+                        frame = frame.v120(Axis::Horizontal, discrete as i32);
+                    }
+                }
+                if v_amnt != 0.0 {
+                    frame = frame.relative_direction(Axis::Vertical, event.relative_direction(Axis::Vertical));
+                    frame = frame.value(Axis::Vertical, v_amnt);
+                    if let Some(discrete) = v_amnt_120 {
+                        frame = frame.v120(Axis::Vertical, discrete as i32);
+                    }
+                }
+                if event.source() == AxisSource::Finger {
+                    if event.amount(Axis::Horizontal) == Some(0.0) {
+                        frame = frame.stop(Axis::Horizontal);
+                    }
+                    if event.amount(Axis::Vertical) == Some(0.0) {
+                        frame = frame.stop(Axis::Vertical);
+                    }
+                }
+                let pointer = self.seat.get_pointer().unwrap();
+                pointer.axis(self, frame);
+                pointer.frame(self);
             }
             _ => {}
         }
-    }).unwrap();
-    Ok(())
+    }
+
+    pub fn start_win(&mut self, el: &mut EventLoop<NocturaStates>) -> Result<(), Box<dyn std::error::Error>> {
+        // this function is used to open the window through which you can see Noctura compositor
+
+        let (mut backend, winit) = winit::init::<GlesRenderer>()?;
+        let mut out_mode = Mode {
+            size: backend.window_size(),
+            refresh: 60000,
+        };
+        let output = Output::new(
+            "noctura".into(),
+            PhysicalProperties {
+                size: (0, 0).into(),
+                subpixel: smithay::output::Subpixel::Unknown,
+                // NOTE: add real monitor name + model in the non-nested version
+                make: "NocturaDisplay".into(),
+                model: "Nested".into(),
+            }
+        );
+
+        let _ = output.create_global::<NocturaStates>(&self.dh);
+        output.change_current_state(
+            Some(out_mode),
+            Some(Flipped180),      // NOTE: I currently dont know why i have to flip 
+    //                                                  the display, but for openGL you must do it, im not sure about other renderers
+            None,
+            Some((0, 0).into())
+        );
+        output.set_preferred(out_mode);
+        self.space.map_output(&output, (0, 0));
+        let mut damage_tracker = OutputDamageTracker::from_output(&output);
+        el.handle().insert_source(winit, move |event, _, state| {
+            match event {
+                WinitEvent::CloseRequested => {
+                    state.ls.stop();
+                }
+                WinitEvent::Resized { size, scale_factor } => {
+                    out_mode.size = size;   // NOTE: find out why this dosent work
+                }
+                WinitEvent::Redraw => {
+                    let size = backend.window_size();
+                    let damage_space = Rectangle::from_size(size);
+                    let (renderer, mut framebuffer) = backend.bind().unwrap();
+                    
+                    let _ = space::render_output::<
+                        _,
+                        WaylandSurfaceRenderElement<GlesRenderer>,
+                        _,
+                        _
+                    >(
+                        &output, renderer, &mut framebuffer,
+                        1.0, 0, [&state.space],
+                        &[],
+                        &mut damage_tracker,
+                        [0.7, 0.1, 1.0, 1.0]
+                    ).unwrap();
+
+                    drop(framebuffer); // Because framebuffer borrow backend, I cant mutably borrow it later when 
+    //                                        I have to submit the damaged frame. Hence, if i drop it, it will no longer exist
+    //                                        which is fine since i already used it but more importantly, it will allow me to
+    //                                        mutably borrow backend again to submit the damaged frame.
+                    backend.submit(Some(&[damage_space]));
+
+                    for win in state.space.elements() {
+                        win.send_frame(&output, state.time.elapsed(), Some(Duration::ZERO), |_, _| { 
+                            Some(output.clone())   // clone as &output already borrowed it
+                        });
+                    }
+
+                    state.space.refresh();
+                    state.dh.flush_clients();
+                    backend.window().request_redraw();
+                }
+                WinitEvent::Input(e) => {
+                    state.handle_input(e);
+                }
+                _ => {}
+            }
+        }).unwrap();
+        Ok(())
+    }
 }

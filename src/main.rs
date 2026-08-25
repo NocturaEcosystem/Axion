@@ -36,10 +36,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>>  {
         )
         .unwrap();
 
-    {
-        state::start_win(&mut noctura_comp, event_loop.handle().clone());                             // open the window through which we 
+    noctura_comp.start_win(&mut event_loop) ;                                                   //  open the window through which we 
 //                                                                                                      can see noctura compositor
-    }
     event_loop.run(None, &mut noctura_comp, move |_| {
         // noctura compositor runs now
     })?;
