@@ -1,11 +1,13 @@
-use std::{sync::Arc, time::Duration};
+use std::{cell::RefCell, sync::Arc, time::Duration};
 
 use calloop::{EventLoop, Interest, LoopHandle, LoopSignal, {Mode as gMode}, generic::Generic};
-use smithay::{backend::{input::{AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputEvent, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent}, renderer::{damage::OutputDamageTracker, element::surface::WaylandSurfaceRenderElement, utils::on_commit_buffer_handler}, winit::{self, WinitEvent, WinitGraphicsBackend, WinitInput}}, delegate_compositor, delegate_data_device, delegate_output, delegate_seat, delegate_shm, delegate_xdg_shell, desktop::{PopupManager, Space, Window, WindowSurfaceType, space}, input::{Seat, SeatHandler, SeatState, keyboard::FilterResult, pointer::{AxisFrame, ButtonEvent, MotionEvent}}, output::{Mode, Output, PhysicalProperties}, reexports::{ash::khr::display, wayland_server::{Client, Display, Resource, backend::Backend, protocol::{wl_buffer, wl_surface::WlSurface}}}, utils::{Rectangle, SERIAL_COUNTER, Transform::Flipped180}, wayland::{buffer::BufferHandler, compositor::{CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface}, output::{OutputHandler, OutputManagerState}, seat::WaylandFocus, selection::{SelectionHandler, data_device::{self, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDnDGrab, ServerDndGrabHandler}}, shell::xdg::{XdgShellHandler, XdgShellState}, shm::{ShmHandler, ShmState}, socket::ListeningSocketSource}, xwayland::xwm::WmWindowProperty::WindowType};
+use smithay::{backend::{input::{AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputEvent, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent}, renderer::{damage::OutputDamageTracker, element::surface::WaylandSurfaceRenderElement, utils::on_commit_buffer_handler}, winit::{self, WinitEvent, WinitGraphicsBackend, WinitInput}}, delegate_compositor, delegate_data_device, delegate_output, delegate_seat, delegate_shm, delegate_xdg_shell, desktop::{PopupManager, Space, Window, WindowSurfaceType, space}, input::{Seat, SeatHandler, SeatState, keyboard::FilterResult, pointer::{AxisFrame, ButtonEvent, Focus, MotionEvent}}, output::{Mode, Output, PhysicalProperties}, reexports::{ash::khr::display, wayland_server::{Client, Display, Resource, backend::Backend, protocol::{wl_buffer, wl_surface::WlSurface}}}, utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Transform::Flipped180}, wayland::{buffer::BufferHandler, compositor::{self, CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface}, output::{OutputHandler, OutputManagerState}, seat::WaylandFocus, selection::{SelectionHandler, data_device::{self, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDnDGrab, ServerDndGrabHandler}}, shell::xdg::{XdgShellHandler, XdgShellState}, shm::{ShmHandler, ShmState}, socket::ListeningSocketSource}, xwayland::xwm::WmWindowProperty::WindowType};
 use smithay::backend::renderer::gles::GlesRenderer;
 
-use crate::{state::NocturaStates, utils::unconstrain_popups};
+use crate::{state::NocturaStates, utils::{move_window::MovingSurface, resize_window::{Edge, ResizingSurfaceStates, resizingSurface}, unconstrain_popups}};
 use crate::state::NocturaClients;
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State;
+
 
 
 // Traits:
@@ -62,6 +64,7 @@ impl CompositorHandler for NocturaStates {
             }
         };
         self.popups.commit(surface);
+        handleResizedCommit(&mut self.space, surface);
     }
 }
 
@@ -95,7 +98,7 @@ impl XdgShellHandler for NocturaStates {
     fn new_toplevel(&mut self, surface: smithay::wayland::shell::xdg::ToplevelSurface) {
         surface.send_configure(); // sending configure is like telling the client to have x,y dimentions, be minimized/maximized.....
         let win = Window::new_wayland_window(surface);
-        self.space.map_element(win, (0, 0), false);
+        self.space.map_element(win, (10, 10), false);
     }
 
     fn new_popup(&mut self, surface: smithay::wayland::shell::xdg::PopupSurface, positioner: smithay::wayland::shell::xdg::PositionerState) {
@@ -116,6 +119,73 @@ impl XdgShellHandler for NocturaStates {
         });
         unconstrain_popups::unconstrain_popups(&self, &surface);
         surface.send_repositioned(token);
+    }
+    fn move_request(&mut self, surface: smithay::wayland::shell::xdg::ToplevelSurface, seat: smithay::reexports::wayland_server::protocol::wl_seat::WlSeat, serial: smithay::utils::Serial) {
+        let wlSurface = surface.wl_surface().clone();
+        let pointer = self.seat.get_pointer().unwrap();
+        if !pointer.has_grab(serial) {
+            return;
+        }
+        let sd = match pointer.grab_start_data() {
+            Some(data) => data,
+            None => return
+        };
+        
+        let (fc, _) = match sd.focus.as_ref() {
+            Some(data) => data,
+            None => return
+        };
+        if !fc.id().same_client_as(&wlSurface.id()) {
+            return;
+        }
+        let window = self.space.elements()
+                                        .find(|w| w.toplevel().unwrap().wl_surface() == &wlSurface).unwrap().clone();
+        let init_win_loc = self.space.element_location(&window).unwrap();
+
+        let mving_grab = MovingSurface {
+            sd,
+            win: window,
+            init_win: init_win_loc
+        };
+        pointer.set_grab(self, mving_grab, serial, Focus::Clear);
+    }
+    fn resize_request(&mut self, surface: smithay::wayland::shell::xdg::ToplevelSurface, seat: smithay::reexports::wayland_server::protocol::wl_seat::WlSeat, serial: smithay::utils::Serial, edges: smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::ResizeEdge,){
+        let seat: Seat<NocturaStates> = Seat::from_resource(&seat).unwrap();
+        let wlSurface = surface.wl_surface().clone();
+        let pointer = seat.get_pointer().unwrap();
+        if !pointer.has_grab(serial) {
+            return;
+        }
+        let sd = match pointer.grab_start_data() {
+            Some(data) => data,
+            None => return
+        };
+        
+        let (fc, _) = match sd.focus.as_ref() {
+            Some(data) => data,
+            None => return
+        };
+        if !fc.id().same_client_as(&wlSurface.id()) {
+            return
+        }
+        let window = self.space.elements()
+                                        .find(|w| w.toplevel().unwrap().wl_surface() == &wlSurface).unwrap().clone();
+        let init_win_loc = self.space.element_location(&window).unwrap();
+        let init_win_size = window.geometry().size;
+        surface.with_pending_state(|state| {
+            state.states.set(State::Resizing);
+        });
+        surface.send_configure();
+        let rszing_grab = resizingSurface::start_resizing(
+            sd,
+            window,
+            edges.into(),
+            Rectangle::new(init_win_loc, init_win_size)
+        );
+
+        pointer.set_grab(self, rszing_grab, serial, Focus::Clear);
+
+
     }
 }
 
@@ -249,14 +319,15 @@ impl NocturaStates {
                 };
                 let focus = self.space.element_under(pointer_position).and_then(
                     |(surface, loc)| {
-                        surface.surface_under(loc.to_f64(), WindowSurfaceType::ALL).map(
+                        surface.surface_under(pointer_position - loc.to_f64(), WindowSurfaceType::ALL).map(
                             |(surface, point)| {
-                                (surface, ((point + loc).to_f64()))
+                                (surface, point.to_f64())
                             }
                         )
                     }
                 );
                 pointer.motion(self, focus, motionEvent);
+                pointer.frame(self);
             }
             InputEvent::PointerButton { event } => {
                 let btn_state = event.state();
@@ -419,4 +490,44 @@ impl NocturaStates {
         }).unwrap();
         Ok(())
     }
+}
+
+fn handleResizedCommit(space: &mut Space<Window>, surface: &WlSurface) -> Option<()> {
+    let win = space.elements().find(|w| {
+        w.toplevel().unwrap().wl_surface() == surface
+    }).cloned()?;
+    let mut location = space.element_location(&win)?;
+    let geo = win.geometry();
+
+    let newLocation: Point<Option<i32>, Logical> = 
+        compositor::with_states(surface, |surfData| {
+            surfData.data_map.insert_if_missing(RefCell::<ResizingSurfaceStates>::default);
+            let state = surfData.data_map.get::<RefCell<ResizingSurfaceStates>>().unwrap();
+            state.borrow_mut().wrap().and_then(|(edges, rect)| {
+                edges.intersects(Edge::TOP | Edge::LEFT).then(|| {
+                    let x = if edges.intersects(Edge::LEFT) {
+                        Some(rect.loc.x + (rect.size.w - geo.size.w))
+                    } else {
+                        None
+                    };
+                    let y = if edges.intersects(Edge::TOP) {
+                        Some(rect.loc.y + (rect.size.h - geo.size.h))
+                    } else {
+                        None
+                    };
+
+                    (x, y).into()
+                })
+            }).unwrap_or_default()
+        });
+    if let Some(x) = newLocation.x {
+        location.x = x;
+    }
+    if let Some(y) = newLocation.y {
+        location.y = y;
+    }
+    if newLocation.x.is_some() || newLocation.y.is_some() {
+        space.map_element(win, location, false);
+    }
+    Some(())
 }

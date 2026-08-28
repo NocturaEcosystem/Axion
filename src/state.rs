@@ -32,6 +32,4 @@ pub struct NocturaClients {  // this will contain data about our clients/apps
     pub comp_state: CompositorClientState,
 }
 
-pub struct NocturaSystem {   // this will contan data like number of worksapce, apps, etc.
 
-}
