@@ -24,3 +24,5 @@ target
 # some internal automation file
 f.sh
 INSPECT.logs
+logs/*
+!logs/logs.md
