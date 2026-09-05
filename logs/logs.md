@@ -1,5 +1,5 @@
 # Development logs
-> The chronological order of updates for the nocutra component: {name}---
+> The chronological order of updates for the nocutra component: Axion---
 # 📚 Documentation - V-1-0-0
 
 **Time**: 05/09/2026 - 01:08 PM
