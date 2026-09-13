@@ -1,8 +1,9 @@
 use std::{cell::RefCell, sync::Arc, time::Duration};
 
-use calloop::{EventLoop, Interest, LoopHandle, LoopSignal, {Mode as gMode}, generic::Generic};
-use smithay::{backend::{input::{AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputEvent, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent}, renderer::{damage::OutputDamageTracker, element::surface::WaylandSurfaceRenderElement, utils::on_commit_buffer_handler}, winit::{self, WinitEvent, WinitGraphicsBackend, WinitInput}}, delegate_compositor, delegate_data_device, delegate_output, delegate_seat, delegate_shm, delegate_xdg_shell, desktop::{PopupManager, Space, Window, WindowSurfaceType, space}, input::{Seat, SeatHandler, SeatState, keyboard::FilterResult, pointer::{AxisFrame, ButtonEvent, Focus, MotionEvent}}, output::{Mode, Output, PhysicalProperties}, reexports::{ash::khr::display, wayland_server::{Client, Display, Resource, backend::Backend, protocol::{wl_buffer, wl_surface::WlSurface}}}, utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Transform::Flipped180}, wayland::{buffer::BufferHandler, compositor::{self, CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface}, output::{OutputHandler, OutputManagerState}, seat::WaylandFocus, selection::{SelectionHandler, data_device::{self, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDnDGrab, ServerDndGrabHandler}}, shell::xdg::{XdgShellHandler, XdgShellState}, shm::{ShmHandler, ShmState}, socket::ListeningSocketSource}, xwayland::xwm::WmWindowProperty::WindowType};
+use calloop::{EventLoop};
+use smithay::{backend::{input::{AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputEvent, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent}, renderer::{self, damage::OutputDamageTracker, element::surface::WaylandSurfaceRenderElement, utils::on_commit_buffer_handler}, winit::{self, WinitEvent, WinitGraphicsBackend, WinitInput}}, delegate_compositor, delegate_data_device, delegate_output, delegate_seat, delegate_shm, delegate_xdg_shell, desktop::{PopupManager, Space, Window, WindowSurfaceType, space}, input::{Seat, SeatHandler, SeatState, keyboard::FilterResult, pointer::{AxisFrame, ButtonEvent, Focus, MotionEvent}}, output::{Mode, Output, PhysicalProperties}, reexports::{ash::khr::display, wayland_server::{Client, Display, Resource, backend::Backend, protocol::{wl_buffer, wl_surface::WlSurface}}}, utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Transform::Flipped180}, wayland::{buffer::BufferHandler, compositor::{self, CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface}, output::{OutputHandler, OutputManagerState}, seat::WaylandFocus, selection::{SelectionHandler, data_device::{self, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDnDGrab, ServerDndGrabHandler}}, shell::xdg::{XdgShellHandler, XdgShellState}, shm::{ShmHandler, ShmState}, socket::ListeningSocketSource}, xwayland::xwm::WmWindowProperty::WindowType};
 use smithay::backend::renderer::gles::GlesRenderer;
+use tracing::{warn, error};
 
 use crate::{state::NocturaStates, utils::{move_window::MovingSurface, resize_window::{Edge, ResizingSurfaceStates, resizingSurface}, unconstrain_popups}};
 use crate::state::NocturaClients;
@@ -67,7 +68,6 @@ impl CompositorHandler for NocturaStates {
         handleResizedCommit(&mut self.space, surface);
     }
 }
-
 
 impl ShmHandler for NocturaStates {
     fn shm_state(&self) -> &ShmState {
@@ -265,10 +265,12 @@ impl NocturaStates {
                 // Inside the callback, you should insert the client into the display.
                 //
                 // You may also associate some data with the client when inserting the client.
-                state
+                let result  = state
                     .dh
-                    .insert_client(client_stream, Arc::new(NocturaClients::default()))
-                    .unwrap();
+                    .insert_client(client_stream, Arc::new(NocturaClients::default()));
+                if let Err(error) = result {
+                    warn!("Error with wayland client: {}", error);
+                }
             })
             .expect("Failed to init the wayland event source.");
 
@@ -295,7 +297,7 @@ impl NocturaStates {
     }
 
     pub fn prep_seat(seat: &mut Seat<Self>) {
-        seat.add_keyboard(Default::default(), 200, 25).unwrap();
+        seat.add_keyboard(Default::default(), 200, 25).expect("Error initializing keyboard");
         seat.add_pointer();
     }
 
@@ -446,31 +448,43 @@ impl NocturaStates {
                     state.ls.stop();
                 }
                 WinitEvent::Resized { size, scale_factor } => {
-                    out_mode.size = size;   // NOTE: find out why this dosent work
+                    output.change_current_state(Some(Mode {size, refresh: 60_000}),
+                        None,
+                        None,
+                        None,
+                    );
                 }
                 WinitEvent::Redraw => {
                     let size = backend.window_size();
-                    let damage_space = Rectangle::from_size(size);
-                    let (renderer, mut framebuffer) = backend.bind().unwrap();
-                    
-                    let _ = space::render_output::<
-                        _,
-                        WaylandSurfaceRenderElement<GlesRenderer>,
-                        _,
-                        _
-                    >(
-                        &output, renderer, &mut framebuffer,
-                        1.0, 0, [&state.space],
-                        &[],
-                        &mut damage_tracker,
-                        [0.7, 0.1, 1.0, 1.0]
-                    ).unwrap();
+                    let render_res = backend.bind().and_then(|(renderer, mut framebuffer)| {
+                        space::render_output::<
+                            _,
+                            WaylandSurfaceRenderElement<GlesRenderer>,
+                            _,
+                            _
+                        >(
+                            &output, renderer, &mut framebuffer,
+                            1.0, 0, [&state.space],
+                            &[],
+                            &mut damage_tracker,
+                            [0.7, 0.1, 1.0, 1.0]
+                        ).map_err(|err| match err {
+                            renderer::damage::Error::Rendering(err) => smithay::backend::SwapBuffersError::from(err),
+                            _ => unreachable!(),
+                        })
+                    });
 
-                    drop(framebuffer); // Because framebuffer borrow backend, I cant mutably borrow it later when 
-    //                                        I have to submit the damaged frame. Hence, if i drop it, it will no longer exist
-    //                                        which is fine since i already used it but more importantly, it will allow me to
-    //                                        mutably borrow backend again to submit the damaged frame.
-                    backend.submit(Some(&[damage_space]));
+                    match render_res {
+                        Ok(ror) => {
+                            if let Some(damage) = ror.damage {
+                                backend.submit(Some(damage));
+                            }
+                        }
+                        Err(error) => {
+                            warn!("Error while rendering {}", error)
+                        }
+                    }
+    
 
                     for win in state.space.elements() {
                         win.send_frame(&output, state.time.elapsed(), Some(Duration::ZERO), |_, _| { 

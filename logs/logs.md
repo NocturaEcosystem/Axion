@@ -17,3 +17,25 @@ src/  -  🟢 Added
 Cargo.toml  -  🟡 Changed
 
 ```
+---
+# 🐛 Bug fix - V-1-1-0
+
+**Time**: 13/09/2026 - 11:12 PM
+**Status**: 🌘 Detected
+
+## Summary
+This minor version of Axion is going to focus on making Axion more safer and less crash-prone
+This update just made the redraw logic a bit more robust and crash-free
+This update also made the winit window resize work properly
+
+## Notice
+There will be less .unwrap() ussage, and perference towards error handling
+I'm still considering if we should include logging in this version or the next,
+next patch note will answer this question
+
+## Things that were added/changed
+```
+compositor_imps.rs  -  🟡 Changed
+basicUtils.rs - 🟢 Added
+
+```
