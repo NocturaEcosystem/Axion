@@ -64,6 +64,9 @@ bitflags! {
                     RIGHT → active
 
                 This lets us represent corner resizing using the same Edge type.
+                Aditional information, if the user is grabbing TOP or LEFT edge (or any edge
+                besides bottom right edge), we have to change the origin of the window. Think 
+                of origin as what the window believes is its "(0, 0)" / start point
             */
 
         */

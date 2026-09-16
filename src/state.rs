@@ -2,13 +2,12 @@
    WILL BE IN ANOTHER FILE
 */
 
-use std::ffi::OsString;
+use std::{collections::BTreeMap, ffi::OsString};
 
 use calloop::{EventLoop, LoopHandle, LoopSignal};
-use smithay::{desktop::{PopupManager, Space, Window}, input::{Seat, SeatState}, reexports::{ash::vk::Display, wayland_server::DisplayHandle}, wayland::{compositor::{CompositorClientState, CompositorState}, output::OutputManagerState, selection::data_device::DataDeviceState, shell::xdg::XdgShellState, shm::ShmState, socket::ListeningSocketSource}};
+use smithay::{backend::renderer::{Texture, element::texture::TextureBuffer}, desktop::{PopupManager, Space, Window}, input::{Seat, SeatState, pointer::CursorImageStatus}, reexports::{ash::vk::Display, wayland_server::DisplayHandle}, utils::{Logical, Point}, wayland::{compositor::{CompositorClientState, CompositorState}, output::OutputManagerState, selection::data_device::DataDeviceState, shell::xdg::XdgShellState, shm::ShmState, socket::ListeningSocketSource}};
 // activate our implementations
 
-mod client_impls;
 mod compositor_impls;
 pub struct NocturaStates {    // this will contain data about our compositor as a whole
     pub time: std::time::Instant,
@@ -24,12 +23,24 @@ pub struct NocturaStates {    // this will contain data about our compositor as 
     pub dds: DataDeviceState,
     pub xdg_state: XdgShellState,
     pub space: Space<Window>,
+    pub cs: CursorImageStatus,
+    pub pointerPos: Point<f64, Logical>,
 
 }
 
+mod client_impls;
 #[derive(Default)]
 pub struct NocturaClients {  // this will contain data about our clients/apps
     pub comp_state: CompositorClientState,
 }
+
+mod cursor_impls;
+pub struct NocturaCursor<T: Texture> {
+    pub cs: CursorImageStatus,
+    pub whole_stamp: u64,
+    pub current_stamp: u64,
+    pub map_of_image: BTreeMap<u64, TextureBuffer<T>>,
+}
+
 
 

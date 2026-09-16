@@ -1,11 +1,11 @@
 use std::{cell::RefCell, sync::Arc, time::Duration};
 
 use calloop::{EventLoop};
-use smithay::{backend::{input::{AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputEvent, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent}, renderer::{self, damage::OutputDamageTracker, element::surface::WaylandSurfaceRenderElement, utils::on_commit_buffer_handler}, winit::{self, WinitEvent, WinitGraphicsBackend, WinitInput}}, delegate_compositor, delegate_data_device, delegate_output, delegate_seat, delegate_shm, delegate_xdg_shell, desktop::{PopupManager, Space, Window, WindowSurfaceType, space}, input::{Seat, SeatHandler, SeatState, keyboard::FilterResult, pointer::{AxisFrame, ButtonEvent, Focus, MotionEvent}}, output::{Mode, Output, PhysicalProperties}, reexports::{ash::khr::display, wayland_server::{Client, Display, Resource, backend::Backend, protocol::{wl_buffer, wl_surface::WlSurface}}}, utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Transform::Flipped180}, wayland::{buffer::BufferHandler, compositor::{self, CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface}, output::{OutputHandler, OutputManagerState}, seat::WaylandFocus, selection::{SelectionHandler, data_device::{self, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDnDGrab, ServerDndGrabHandler}}, shell::xdg::{XdgShellHandler, XdgShellState}, shm::{ShmHandler, ShmState}, socket::ListeningSocketSource}, xwayland::xwm::WmWindowProperty::WindowType};
+use smithay::{backend::{input::{AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputEvent, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent}, renderer::{self, damage::OutputDamageTracker, element::{AsRenderElements, surface::WaylandSurfaceRenderElement}, utils::on_commit_buffer_handler}, winit::{self, WinitEvent, WinitGraphicsBackend, WinitInput}}, delegate_compositor, delegate_data_device, delegate_output, delegate_seat, delegate_shm, delegate_xdg_shell, desktop::{PopupManager, Space, Window, WindowSurfaceType, space}, input::{Seat, SeatHandler, SeatState, keyboard::FilterResult, pointer::{AxisFrame, ButtonEvent, CursorImageStatus, Focus, MotionEvent}}, output::{Mode, Output, PhysicalProperties}, reexports::{ash::khr::display, wayland_server::{Client, Display, Resource, backend::Backend, protocol::{wl_buffer, wl_surface::WlSurface}}, winit::keyboard}, utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Scale, Transform::Flipped180}, wayland::{buffer::BufferHandler, compositor::{self, CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface}, output::{OutputHandler, OutputManagerState}, seat::WaylandFocus, selection::{SelectionHandler, data_device::{self, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDnDGrab, ServerDndGrabHandler}}, shell::xdg::{XdgShellHandler, XdgShellState}, shm::{ShmHandler, ShmState}, socket::ListeningSocketSource}, xwayland::xwm::WmWindowProperty::WindowType};
 use smithay::backend::renderer::gles::GlesRenderer;
-use tracing::{warn, error};
+use tracing::{warn, info};
 
-use crate::{state::NocturaStates, utils::{move_window::MovingSurface, resize_window::{Edge, ResizingSurfaceStates, resizingSurface}, unconstrain_popups}};
+use crate::{state::{NocturaCursor, NocturaStates, cursor_impls::PointerRenderElement}, utils::{move_window::MovingSurface, resize_window::{Edge, ResizingSurfaceStates, resizingSurface}, unconstrain_popups}};
 use crate::state::NocturaClients;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State;
 
@@ -27,7 +27,9 @@ impl SeatHandler for NocturaStates {
         &mut self.ss
     }
 
-    fn cursor_image(&mut self, _seat: &Seat<Self>, _image: smithay::input::pointer::CursorImageStatus) {}
+    fn cursor_image(&mut self, _seat: &Seat<Self>, image: smithay::input::pointer::CursorImageStatus) {
+        self.cs = image
+    }
 
     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
         let client = focused.and_then(|surface| {
@@ -122,7 +124,11 @@ impl XdgShellHandler for NocturaStates {
     }
     fn move_request(&mut self, surface: smithay::wayland::shell::xdg::ToplevelSurface, seat: smithay::reexports::wayland_server::protocol::wl_seat::WlSeat, serial: smithay::utils::Serial) {
         let wlSurface = surface.wl_surface().clone();
-        let pointer = self.seat.get_pointer().unwrap();
+        let pointer = self.seat.get_pointer();
+        if pointer.is_none() {
+            return;
+        }
+        let pointer = pointer.unwrap(); // safe to unwrap now 
         if !pointer.has_grab(serial) {
             return;
         }
@@ -150,9 +156,12 @@ impl XdgShellHandler for NocturaStates {
         pointer.set_grab(self, mving_grab, serial, Focus::Clear);
     }
     fn resize_request(&mut self, surface: smithay::wayland::shell::xdg::ToplevelSurface, seat: smithay::reexports::wayland_server::protocol::wl_seat::WlSeat, serial: smithay::utils::Serial, edges: smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::ResizeEdge,){
-        let seat: Seat<NocturaStates> = Seat::from_resource(&seat).unwrap();
         let wlSurface = surface.wl_surface().clone();
-        let pointer = seat.get_pointer().unwrap();
+        let pointer = self.seat.get_pointer();
+        if pointer.is_none() {
+            return;
+        }
+        let pointer = pointer.unwrap(); // safe to unwrap now 
         if !pointer.has_grab(serial) {
             return;
         }
@@ -254,10 +263,11 @@ impl NocturaStates {
         let dds = DataDeviceState::new::<Self>(&dh);
         let listen_source = ListeningSocketSource::new_auto().unwrap();
         let socket_name = listen_source.socket_name().to_os_string();
-        println!("SOCKET NAME: {:?}", socket_name);
+        info!("SOCKET NAME: {:?}", socket_name);
         let xdg_state = XdgShellState::new::<Self>(&dh);
         let space = Space::default();
         let popups = PopupManager::default();
+        let cs = CursorImageStatus::default_named();
 
 
         el.handle().clone()
@@ -292,7 +302,9 @@ impl NocturaStates {
             shm_state,
             dds,
             xdg_state,
-            space
+            space,
+            cs,
+            pointerPos: (0.0, 0.0).into()
         }
     }
 
@@ -304,14 +316,18 @@ impl NocturaStates {
     pub fn handle_input(&mut self, e: InputEvent<WinitInput>) {
         match e {
             InputEvent::Keyboard { event, .. } => {
-                self.seat.get_keyboard().unwrap().input::<(), _>(
-                    self, event.key_code(), event.state(), SERIAL_COUNTER.next_serial(), event.time_msec(),
-                    |_, _, _| FilterResult::Forward
-                );
+                if let Some(keyboard) = self.seat.get_keyboard() {
+                    keyboard.input::<(), _>(
+                        self, event.key_code(), event.state(), SERIAL_COUNTER.next_serial(), event.time_msec(),
+                        |_, _, _| FilterResult::Forward
+                    );
+                }
+                
             }
             InputEvent::PointerMotionAbsolute { event } => {
                 let output = self.space.outputs().next().unwrap();
                 let output_geo = self.space.output_geometry(output).unwrap();
+                self.pointerPos = event.position_transformed(output_geo.size);
                 let pointer = self.seat.get_pointer().unwrap();
                 let pointer_position = event.position_transformed(output_geo.size) + output_geo.loc.to_f64();
                 let motionEvent = &MotionEvent {
@@ -333,8 +349,13 @@ impl NocturaStates {
             }
             InputEvent::PointerButton { event } => {
                 let btn_state = event.state();
-                let pointer = self.seat.get_pointer().unwrap();
-                let kb = self.seat.get_keyboard().unwrap();
+                let pointer = self.seat.get_pointer();
+                let kb = self.seat.get_keyboard();
+                if pointer.is_none() || kb.is_none() {
+                    return;
+                }
+                let pointer = pointer.unwrap(); // unwrap is safe now
+                let kb = kb.unwrap(); // unwrap is safe now
                 let serial = SERIAL_COUNTER.next_serial();
                 if btn_state == ButtonState::Pressed && !pointer.is_grabbed() {
                     if let Some(window) = self.space.element_under(pointer.current_location()).map(|(w, _)| {
@@ -404,7 +425,11 @@ impl NocturaStates {
                         frame = frame.stop(Axis::Vertical);
                     }
                 }
-                let pointer = self.seat.get_pointer().unwrap();
+                let pointer = self.seat.get_pointer();
+                if pointer.is_none() {
+                    return;
+                }
+                let pointer = pointer.unwrap(); // unwrap is safe now
                 pointer.axis(self, frame);
                 pointer.frame(self);
             }
@@ -442,6 +467,7 @@ impl NocturaStates {
         output.set_preferred(out_mode);
         self.space.map_output(&output, (0, 0));
         let mut damage_tracker = OutputDamageTracker::from_output(&output);
+        let mut pointer = NocturaCursor::try_new(backend.renderer()).unwrap();
         el.handle().insert_source(winit, move |event, _, state| {
             match event {
                 WinitEvent::CloseRequested => {
@@ -455,17 +481,24 @@ impl NocturaStates {
                     );
                 }
                 WinitEvent::Redraw => {
-                    let size = backend.window_size();
                     let render_res = backend.bind().and_then(|(renderer, mut framebuffer)| {
+                        pointer.current_delay(state.time.elapsed());
+                        pointer.cs = state.cs.clone();
+                            let scale = Scale::from(output.current_scale().fractional_scale());
+                        let cp = state.pointerPos;
+                        let cps = cp.to_physical(scale).to_i32_round();
+                        let mut elements = Vec::<PointerRenderElement<GlesRenderer>>::new();
+                        elements.extend(pointer.render_elements::<PointerRenderElement<GlesRenderer>>
+                                (renderer, cps, scale, 1.0));
                         space::render_output::<
                             _,
-                            WaylandSurfaceRenderElement<GlesRenderer>,
+                            PointerRenderElement<GlesRenderer>,
                             _,
                             _
                         >(
                             &output, renderer, &mut framebuffer,
                             1.0, 0, [&state.space],
-                            &[],
+                            &elements,
                             &mut damage_tracker,
                             [0.7, 0.1, 1.0, 1.0]
                         ).map_err(|err| match err {

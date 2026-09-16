@@ -32,10 +32,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>>  {
                 Ok(calloop::PostAction::Continue)
             },
         )
-        .unwrap();
+        .expect("Error while trying to initializing wayland server source");
 
-    noctura_comp.start_win(&mut event_loop) ;                                                   //  open the window through which we 
+    let winit_res = noctura_comp.start_win(&mut event_loop); //         open the window through which we 
 //                                                                                                      can see noctura compositor
+
+    if winit_res.is_err() {
+        let err_type = winit_res.unwrap_err();
+        return Err(err_type)
+    }
     event_loop.run(None, &mut noctura_comp, move |_| {
         // noctura compositor runs now
     })?;

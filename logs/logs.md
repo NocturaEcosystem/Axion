@@ -39,3 +39,24 @@ compositor_imps.rs  -  🟡 Changed
 basicUtils.rs - 🟢 Added
 
 ```
+---
+# ⭐ New Feature - V-1-1-1
+
+**Time**: 16/09/2026 - 09:26 PM
+**Status**: 🌗 Partially Complete
+
+## Summary
+Added cursor to the compositor
+Made certain things more safer
+
+## Notice
+The NocturaCursor(check cursor_impls.rs/state.rs) is a implemented a bit less tranditionally
+In NocturaState, the key "cs" (stands for cursor image state), is shared with NocturaCursor
+(check implementation in event loop handle at compositor_impls, start_win)
+
+## Things that were added/changed
+```
+cursor_impls.rs  -  🟢 Added
+compositor_impls.rs  -  🟡 Changed
+
+```
