@@ -1,7 +1,7 @@
 use std::{cell::RefCell, sync::Arc, time::Duration};
 
 use calloop::{EventLoop};
-use smithay::{backend::{input::{AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputEvent, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent}, renderer::{self, damage::OutputDamageTracker, element::{AsRenderElements, surface::WaylandSurfaceRenderElement}, utils::on_commit_buffer_handler}, winit::{self, WinitEvent, WinitGraphicsBackend, WinitInput}}, delegate_compositor, delegate_data_device, delegate_output, delegate_seat, delegate_shm, delegate_xdg_shell, desktop::{PopupManager, Space, Window, WindowSurfaceType, space}, input::{Seat, SeatHandler, SeatState, keyboard::FilterResult, pointer::{AxisFrame, ButtonEvent, CursorImageStatus, Focus, MotionEvent}}, output::{Mode, Output, PhysicalProperties}, reexports::{ash::khr::display, wayland_server::{Client, Display, Resource, backend::Backend, protocol::{wl_buffer, wl_surface::WlSurface}}, winit::keyboard}, utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Scale, Transform::Flipped180}, wayland::{buffer::BufferHandler, compositor::{self, CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface}, output::{OutputHandler, OutputManagerState}, seat::WaylandFocus, selection::{SelectionHandler, data_device::{self, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDnDGrab, ServerDndGrabHandler}}, shell::xdg::{XdgShellHandler, XdgShellState}, shm::{ShmHandler, ShmState}, socket::ListeningSocketSource}, xwayland::xwm::WmWindowProperty::WindowType};
+use smithay::{backend::{input::{AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputEvent, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent}, renderer::{self, damage::OutputDamageTracker, element::{AsRenderElements, surface::WaylandSurfaceRenderElement}, utils::on_commit_buffer_handler}, winit::{self, WinitEvent, WinitGraphicsBackend, WinitInput}}, delegate_compositor, delegate_data_device, delegate_fractional_scale, delegate_output, delegate_primary_selection, delegate_seat, delegate_shm, delegate_viewporter, delegate_xdg_activation, delegate_xdg_foreign, delegate_xdg_shell, desktop::{PopupManager, Space, Window, WindowSurfaceType, space}, input::{Seat, SeatHandler, SeatState, keyboard::FilterResult, pointer::{AxisFrame, ButtonEvent, CursorImageStatus, Focus, MotionEvent}}, output::{Mode, Output, PhysicalProperties}, reexports::{ash::khr::display, wayland_server::{Client, Display, Resource, backend::Backend, protocol::{wl_buffer, wl_surface::WlSurface}}, winit::keyboard}, utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Scale, Transform::Flipped180}, wayland::{buffer::BufferHandler, compositor::{self, CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface}, fractional_scale::{FractionalScaleHandler, FractionalScaleManagerState}, output::{OutputHandler, OutputManagerState}, seat::WaylandFocus, selection::{SelectionHandler, data_device::{self, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDnDGrab, ServerDndGrabHandler}, primary_selection::{PrimarySelectionHandler, PrimarySelectionState}}, shell::xdg::{XdgShellHandler, XdgShellState}, shm::{ShmHandler, ShmState}, socket::ListeningSocketSource, viewporter::ViewporterState, xdg_activation::{XdgActivationHandler, XdgActivationState}, xdg_foreign::{XdgForeignHandler, XdgForeignState}}, xwayland::xwm::WmWindowProperty::WindowType};
 use smithay::backend::renderer::gles::GlesRenderer;
 use tracing::{warn, info};
 
@@ -82,6 +82,12 @@ impl BufferHandler for NocturaStates {
 
 impl SelectionHandler for NocturaStates {
     type SelectionUserData = ();
+}
+
+impl PrimarySelectionHandler for NocturaStates {
+    fn primary_selection_state(&self) -> &PrimarySelectionState {
+        &self.primary_selection
+    }
 }
 
 impl DataDeviceHandler for NocturaStates {
@@ -198,6 +204,53 @@ impl XdgShellHandler for NocturaStates {
     }
 }
 
+impl FractionalScaleHandler for NocturaStates {
+    // TODO
+}
+
+impl XdgActivationHandler for NocturaStates {
+    fn activation_state(&mut self) -> &mut XdgActivationState {
+        &mut self.xas
+    }
+    fn request_activation(
+        &mut self,
+        _token: smithay::wayland::xdg_activation::XdgActivationToken,
+        token_data: smithay::wayland::xdg_activation::XdgActivationTokenData,
+        surface: WlSurface,
+    )
+    {
+        if token_data.timestamp.elapsed().as_millis() < 10000 {
+            let target_window = self.space.elements().find(|win| {
+                win.wl_surface().map(|surf| {
+                    *surf == surface
+                }).unwrap_or(false)
+            }).cloned();
+            if let Some(window) = target_window {
+                self.space.raise_element(&window, true);
+            }
+        }
+    }
+
+    fn token_created(&mut self, token: smithay::wayland::xdg_activation::XdgActivationToken, data: smithay::wayland::xdg_activation::XdgActivationTokenData) -> bool {
+        if data.serial.is_none() {
+            return false
+        }
+        let (serial, seat) = data.serial.unwrap(); // unwrap is safe here
+        let keyboard = self.seat.get_keyboard();
+        if keyboard.is_none() {
+            return false
+        }
+        let keyboard = keyboard.unwrap(); // unwrap is safe here
+        Seat::from_resource(&seat) == Some(self.seat.clone()) &&
+        keyboard.last_enter().map(|last| {serial.is_no_older_than(&last)}).unwrap_or(false)
+    }
+}
+
+impl XdgForeignHandler for NocturaStates {
+    fn xdg_foreign_state(&mut self) -> &mut XdgForeignState {
+        &mut self.xdg_fs
+    }
+}
 
 // Delegate
 
@@ -214,6 +267,11 @@ delegate_compositor!(NocturaStates);
 delegate_shm!(NocturaStates);
 delegate_data_device!(NocturaStates);
 delegate_xdg_shell!(NocturaStates);
+delegate_fractional_scale!(NocturaStates);
+delegate_primary_selection!(NocturaStates);
+delegate_viewporter!(NocturaStates);
+delegate_xdg_activation!(NocturaStates);
+delegate_xdg_foreign!(NocturaStates);
 
 
 // My own implementations:
@@ -268,6 +326,12 @@ impl NocturaStates {
         let space = Space::default();
         let popups = PopupManager::default();
         let cs = CursorImageStatus::default_named();
+        let fraction_scale = FractionalScaleManagerState::new::<Self>(&dh);
+        let primary_selection = PrimarySelectionState::new::<Self>(&dh);
+        let vps = ViewporterState::new::<Self>(&dh);
+        let xas = XdgActivationState::new::<Self>(&dh);
+        let xdg_fs= XdgForeignState::new::<Self>(&dh);
+
 
 
         el.handle().clone()
@@ -304,7 +368,12 @@ impl NocturaStates {
             xdg_state,
             space,
             cs,
-            pointerPos: (0.0, 0.0).into()
+            pointerPos: (0.0, 0.0).into(),
+            fraction_scale,
+            primary_selection,
+            vps,
+            xas,
+            xdg_fs
         }
     }
 
@@ -333,13 +402,13 @@ impl NocturaStates {
                 let motionEvent = &MotionEvent {
                     location: pointer_position,
                     serial: SERIAL_COUNTER.next_serial(),
-                    time: event.time_msec(),
+                    time: event.time() as u32,
                 };
                 let focus = self.space.element_under(pointer_position).and_then(
-                    |(surface, loc)| {
-                        surface.surface_under(pointer_position - loc.to_f64(), WindowSurfaceType::ALL).map(
+                    |(win, loc)| {
+                        win.surface_under(pointer_position - loc.to_f64(), WindowSurfaceType::ALL).map(
                             |(surface, point)| {
-                                (surface, point.to_f64())
+                                (surface, (point + loc).to_f64())
                             }
                         )
                     }

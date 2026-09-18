@@ -5,7 +5,7 @@
 use std::{collections::BTreeMap, ffi::OsString};
 
 use calloop::{EventLoop, LoopHandle, LoopSignal};
-use smithay::{backend::renderer::{Texture, element::texture::TextureBuffer}, desktop::{PopupManager, Space, Window}, input::{Seat, SeatState, pointer::CursorImageStatus}, reexports::{ash::vk::Display, wayland_server::DisplayHandle}, utils::{Logical, Point}, wayland::{compositor::{CompositorClientState, CompositorState}, output::OutputManagerState, selection::data_device::DataDeviceState, shell::xdg::XdgShellState, shm::ShmState, socket::ListeningSocketSource}};
+use smithay::{backend::renderer::{Texture, element::texture::TextureBuffer}, desktop::{PopupManager, Space, Window}, input::{Seat, SeatState, pointer::CursorImageStatus}, reexports::{ash::vk::Display, wayland_server::DisplayHandle}, utils::{Logical, Point}, wayland::{compositor::{CompositorClientState, CompositorState}, fractional_scale::FractionalScaleManagerState, output::OutputManagerState, selection::{data_device::DataDeviceState, primary_selection::PrimarySelectionState}, shell::xdg::XdgShellState, shm::ShmState, socket::ListeningSocketSource, viewporter::ViewporterState, xdg_activation::XdgActivationState, xdg_foreign::XdgForeignState}};
 // activate our implementations
 
 mod compositor_impls;
@@ -25,6 +25,11 @@ pub struct NocturaStates {    // this will contain data about our compositor as 
     pub space: Space<Window>,
     pub cs: CursorImageStatus,
     pub pointerPos: Point<f64, Logical>,
+    pub fraction_scale: FractionalScaleManagerState,
+    pub primary_selection: PrimarySelectionState,
+    pub vps: ViewporterState,
+    pub xas: XdgActivationState,
+    pub xdg_fs: XdgForeignState,
 
 }
 
