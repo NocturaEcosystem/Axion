@@ -1,7 +1,7 @@
 use std::{cell::RefCell, sync::Arc, time::Duration};
 
 use calloop::{EventLoop};
-use smithay::{backend::{input::{AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputEvent, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent}, renderer::{self, damage::OutputDamageTracker, element::{AsRenderElements, surface::WaylandSurfaceRenderElement}, utils::on_commit_buffer_handler}, winit::{self, WinitEvent, WinitGraphicsBackend, WinitInput}}, delegate_compositor, delegate_data_device, delegate_fractional_scale, delegate_output, delegate_primary_selection, delegate_seat, delegate_shm, delegate_viewporter, delegate_xdg_activation, delegate_xdg_foreign, delegate_xdg_shell, desktop::{PopupManager, Space, Window, WindowSurfaceType, space}, input::{Seat, SeatHandler, SeatState, keyboard::FilterResult, pointer::{AxisFrame, ButtonEvent, CursorImageStatus, Focus, MotionEvent}}, output::{Mode, Output, PhysicalProperties}, reexports::{ash::khr::display, wayland_server::{Client, Display, Resource, backend::Backend, protocol::{wl_buffer, wl_surface::WlSurface}}, winit::keyboard}, utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Scale, Transform::Flipped180}, wayland::{buffer::BufferHandler, compositor::{self, CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface}, fractional_scale::{FractionalScaleHandler, FractionalScaleManagerState}, output::{OutputHandler, OutputManagerState}, seat::WaylandFocus, selection::{SelectionHandler, data_device::{self, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDnDGrab, ServerDndGrabHandler}, primary_selection::{PrimarySelectionHandler, PrimarySelectionState}}, shell::xdg::{XdgShellHandler, XdgShellState}, shm::{ShmHandler, ShmState}, socket::ListeningSocketSource, viewporter::ViewporterState, xdg_activation::{XdgActivationHandler, XdgActivationState}, xdg_foreign::{XdgForeignHandler, XdgForeignState}}, xwayland::xwm::WmWindowProperty::WindowType};
+use smithay::{backend::{input::{AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputEvent, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent}, renderer::{self, damage::OutputDamageTracker, element::{AsRenderElements, surface::WaylandSurfaceRenderElement}, utils::on_commit_buffer_handler}, winit::{self, WinitEvent, WinitGraphicsBackend, WinitInput}}, delegate_compositor, delegate_data_control, delegate_data_device, delegate_fractional_scale, delegate_keyboard_shortcuts_inhibit, delegate_output, delegate_primary_selection, delegate_seat, delegate_shm, delegate_single_pixel_buffer, delegate_viewporter, delegate_xdg_activation, delegate_xdg_foreign, delegate_xdg_shell, desktop::{PopupManager, Space, Window, WindowSurfaceType, space}, input::{Seat, SeatHandler, SeatState, keyboard::FilterResult, pointer::{AxisFrame, ButtonEvent, CursorImageStatus, Focus, MotionEvent}}, output::{Mode, Output, PhysicalProperties}, reexports::{ash::khr::display, wayland_server::{Client, Display, Resource, backend::Backend, protocol::{wl_buffer, wl_surface::WlSurface}}, winit::keyboard}, utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Scale, Transform::Flipped180}, wayland::{buffer::BufferHandler, compositor::{self, CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface}, fractional_scale::{FractionalScaleHandler, FractionalScaleManagerState}, keyboard_shortcuts_inhibit::{KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState}, output::{OutputHandler, OutputManagerState}, seat::WaylandFocus, selection::{SelectionHandler, data_device::{self, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDnDGrab, ServerDndGrabHandler}, primary_selection::{PrimarySelectionHandler, PrimarySelectionState}, wlr_data_control::{DataControlHandler, DataControlState}}, shell::xdg::{XdgShellHandler, XdgShellState}, shm::{ShmHandler, ShmState}, single_pixel_buffer::SinglePixelBufferState, socket::ListeningSocketSource, viewporter::ViewporterState, xdg_activation::{XdgActivationHandler, XdgActivationState}, xdg_foreign::{XdgForeignHandler, XdgForeignState}}, xwayland::xwm::WmWindowProperty::WindowType};
 use smithay::backend::renderer::gles::GlesRenderer;
 use tracing::{warn, info};
 
@@ -252,6 +252,21 @@ impl XdgForeignHandler for NocturaStates {
     }
 }
 
+impl DataControlHandler for NocturaStates {
+    fn data_control_state(&self) -> &smithay::wayland::selection::wlr_data_control::DataControlState {
+        &self.data_cs
+    }
+}
+
+impl KeyboardShortcutsInhibitHandler for NocturaStates {
+    fn keyboard_shortcuts_inhibit_state(&mut self) -> &mut KeyboardShortcutsInhibitState {
+        &mut self.shortcut_inhibitor
+    }
+    fn new_inhibitor(&mut self, inhibitor: smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitor) {
+        inhibitor.activate();
+    }
+}
+
 // Delegate
 
 /* 
@@ -272,6 +287,9 @@ delegate_primary_selection!(NocturaStates);
 delegate_viewporter!(NocturaStates);
 delegate_xdg_activation!(NocturaStates);
 delegate_xdg_foreign!(NocturaStates);
+delegate_data_control!(NocturaStates);
+delegate_single_pixel_buffer!(NocturaStates);
+delegate_keyboard_shortcuts_inhibit!(NocturaStates);
 
 
 // My own implementations:
@@ -331,6 +349,9 @@ impl NocturaStates {
         let vps = ViewporterState::new::<Self>(&dh);
         let xas = XdgActivationState::new::<Self>(&dh);
         let xdg_fs= XdgForeignState::new::<Self>(&dh);
+        let data_cs = DataControlState::new::<Self, _>(&dh, Some(&primary_selection), |_client| {true});
+        let single_pixle_buff = SinglePixelBufferState::new::<Self>(&dh);
+        let shortcut_inhibitor = KeyboardShortcutsInhibitState::new::<Self>(&dh);
 
 
 
@@ -373,7 +394,10 @@ impl NocturaStates {
             primary_selection,
             vps,
             xas,
-            xdg_fs
+            xdg_fs,
+            data_cs,
+            single_pixle_buff,
+            shortcut_inhibitor
         }
     }
 

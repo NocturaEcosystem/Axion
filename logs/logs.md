@@ -89,3 +89,26 @@ compositor_impls.rs  -  🟡 Changed
 state.rs             -  🟡 Changed
 
 ```
+---
+# ⭐ New Feature - V-1-1-3
+
+**Time**: 19/09/2026 - 01:32 PM
+**Status**: 🌕 Complete
+
+## Summary
+Extention to wayland protocols.
+
+## Notice
+The protocols that were added are:
+```md
+**wlr-data-control-unstable-v1** (used for clipboard managers)
+**wp-single-pixel-buffer-v1** (used for clients to draw images for efficently (with viewporter))
+**keyboard-shortcuts-inhibit-unstable-v1** (used to let clients bypass compositor/shell keyboard shortcuts)
+```
+
+## Things that were added/changed
+```
+compositor_impls.rs  -  🟡 Changed
+state.rs             -  🟡 Changed
+
+```
