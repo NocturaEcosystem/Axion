@@ -112,3 +112,22 @@ compositor_impls.rs  -  🟡 Changed
 state.rs             -  🟡 Changed
 
 ```
+---
+# ⭐ New Feature - V-1-1-4
+
+**Time**: 19/09/2026 - 08:55 PM
+**Status**: 🌗 Partially Complete
+
+## Summary
+Clients can now maximize and Unmaximize their surface
+
+## Notice
+This feature has been done by implementing
+`maximize` and `unmaximize`
+function in the trait `XdgShellHandler`
+
+## Things that were added/changed
+```
+compositor_impls.rs  -  🟡 Changed
+
+```

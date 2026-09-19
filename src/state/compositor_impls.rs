@@ -1,7 +1,7 @@
-use std::{cell::RefCell, sync::Arc, time::Duration};
+use std::{cell::RefCell, process::id, sync::Arc, time::Duration};
 
 use calloop::{EventLoop};
-use smithay::{backend::{input::{AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputEvent, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent}, renderer::{self, damage::OutputDamageTracker, element::{AsRenderElements, surface::WaylandSurfaceRenderElement}, utils::on_commit_buffer_handler}, winit::{self, WinitEvent, WinitGraphicsBackend, WinitInput}}, delegate_compositor, delegate_data_control, delegate_data_device, delegate_fractional_scale, delegate_keyboard_shortcuts_inhibit, delegate_output, delegate_primary_selection, delegate_seat, delegate_shm, delegate_single_pixel_buffer, delegate_viewporter, delegate_xdg_activation, delegate_xdg_foreign, delegate_xdg_shell, desktop::{PopupManager, Space, Window, WindowSurfaceType, space}, input::{Seat, SeatHandler, SeatState, keyboard::FilterResult, pointer::{AxisFrame, ButtonEvent, CursorImageStatus, Focus, MotionEvent}}, output::{Mode, Output, PhysicalProperties}, reexports::{ash::khr::display, wayland_server::{Client, Display, Resource, backend::Backend, protocol::{wl_buffer, wl_surface::WlSurface}}, winit::keyboard}, utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Scale, Transform::Flipped180}, wayland::{buffer::BufferHandler, compositor::{self, CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface}, fractional_scale::{FractionalScaleHandler, FractionalScaleManagerState}, keyboard_shortcuts_inhibit::{KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState}, output::{OutputHandler, OutputManagerState}, seat::WaylandFocus, selection::{SelectionHandler, data_device::{self, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDnDGrab, ServerDndGrabHandler}, primary_selection::{PrimarySelectionHandler, PrimarySelectionState}, wlr_data_control::{DataControlHandler, DataControlState}}, shell::xdg::{XdgShellHandler, XdgShellState}, shm::{ShmHandler, ShmState}, single_pixel_buffer::SinglePixelBufferState, socket::ListeningSocketSource, viewporter::ViewporterState, xdg_activation::{XdgActivationHandler, XdgActivationState}, xdg_foreign::{XdgForeignHandler, XdgForeignState}}, xwayland::xwm::WmWindowProperty::WindowType};
+use smithay::{backend::{input::{AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputEvent, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent}, renderer::{self, damage::OutputDamageTracker, element::{AsRenderElements, surface::WaylandSurfaceRenderElement}, utils::on_commit_buffer_handler}, winit::{self, WinitEvent, WinitGraphicsBackend, WinitInput}}, delegate_compositor, delegate_data_control, delegate_data_device, delegate_fractional_scale, delegate_keyboard_shortcuts_inhibit, delegate_output, delegate_primary_selection, delegate_seat, delegate_shm, delegate_single_pixel_buffer, delegate_viewporter, delegate_xdg_activation, delegate_xdg_foreign, delegate_xdg_shell, desktop::{PopupManager, Space, Window, WindowSurfaceType, space}, input::{Seat, SeatHandler, SeatState, keyboard::FilterResult, pointer::{AxisFrame, ButtonEvent, CursorImageStatus, Focus, MotionEvent}}, output::{Mode, Output, PhysicalProperties}, reexports::{ash::khr::display, wayland_protocols::xdg::shell::server::xdg_toplevel, wayland_server::{Client, Display, Resource, backend::Backend, protocol::{wl_buffer, wl_surface::WlSurface}}, winit::keyboard, x11rb::protocol::randr::Output as otherOutput}, utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Scale, Transform::Flipped180}, wayland::{buffer::BufferHandler, compositor::{self, CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface}, fractional_scale::{FractionalScaleHandler, FractionalScaleManagerState}, keyboard_shortcuts_inhibit::{KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState}, output::{OutputHandler, OutputManagerState}, seat::WaylandFocus, selection::{SelectionHandler, data_device::{self, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDnDGrab, ServerDndGrabHandler}, primary_selection::{PrimarySelectionHandler, PrimarySelectionState}, wlr_data_control::{DataControlHandler, DataControlState}}, shell::xdg::{XdgShellHandler, XdgShellState}, shm::{ShmHandler, ShmState}, single_pixel_buffer::SinglePixelBufferState, socket::ListeningSocketSource, viewporter::ViewporterState, xdg_activation::{XdgActivationHandler, XdgActivationState}, xdg_foreign::{XdgForeignHandler, XdgForeignState}}, xwayland::xwm::WmWindowProperty::WindowType};
 use smithay::backend::renderer::gles::GlesRenderer;
 use tracing::{warn, info};
 
@@ -119,6 +119,7 @@ impl XdgShellHandler for NocturaStates {
     fn grab(&mut self, surface: smithay::wayland::shell::xdg::PopupSurface, seat: smithay::reexports::wayland_server::protocol::wl_seat::WlSeat, serial: smithay::utils::Serial) {
         // ??
     }
+    
     fn reposition_request(&mut self, surface: smithay::wayland::shell::xdg::PopupSurface, positioner: smithay::wayland::shell::xdg::PositionerState, token: u32) {
         surface.with_pending_state(|state| {
             let geometry = positioner.get_geometry();
@@ -128,6 +129,7 @@ impl XdgShellHandler for NocturaStates {
         unconstrain_popups::unconstrain_popups(&self, &surface);
         surface.send_repositioned(token);
     }
+
     fn move_request(&mut self, surface: smithay::wayland::shell::xdg::ToplevelSurface, seat: smithay::reexports::wayland_server::protocol::wl_seat::WlSeat, serial: smithay::utils::Serial) {
         let wlSurface = surface.wl_surface().clone();
         let pointer = self.seat.get_pointer();
@@ -161,6 +163,7 @@ impl XdgShellHandler for NocturaStates {
         };
         pointer.set_grab(self, mving_grab, serial, Focus::Clear);
     }
+    
     fn resize_request(&mut self, surface: smithay::wayland::shell::xdg::ToplevelSurface, seat: smithay::reexports::wayland_server::protocol::wl_seat::WlSeat, serial: smithay::utils::Serial, edges: smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::ResizeEdge,){
         let wlSurface = surface.wl_surface().clone();
         let pointer = self.seat.get_pointer();
@@ -201,6 +204,79 @@ impl XdgShellHandler for NocturaStates {
         pointer.set_grab(self, rszing_grab, serial, Focus::Clear);
 
 
+    }
+
+/* LATER     fn fullscreen_request(&mut self, surface: smithay::wayland::shell::xdg::ToplevelSurface, wlout: Option<smithay::reexports::wayland_server::protocol::wl_output::WlOutput>) {
+      let wl_s = surface.wl_surface();
+
+
+        let option_geo = wlout.as_ref().and_then(|o| Output::from_resource(&o)).or_else(|| {
+            let w = self.space.elements().find(|win| {
+                win.wl_surface().map(|s| &*s == wl_s).unwrap_or(false)
+            });
+            w.and_then(|w| self.space.outputs_for_element(w).first().cloned())
+        }).as_ref().and_then(|o| self.space.output_geometry(o));
+
+        if let Some(geo) = option_geo {
+            let output = wlout.as_ref().and_then(|o| Output::from_resource(o))
+                .unwrap_or_else(|| self.space.outputs().next().unwrap().clone());
+            if let Ok(client) = self.dh.get_client(wl_s.id()){
+                let mut wl_output = None;
+                output.client_outputs(&client).for_each(|output| {
+                    wl_output = Some(output)
+                });
+                let window = self.space.elements().find(|w| {
+                    w.wl_surface().map(|s| {
+                        &*s == wl_s
+                    }).unwrap_or(false)
+                });
+                if window.is_none() {
+                    return
+                }
+                let window = window.unwrap(); // unwrap is safe here
+
+                surface.with_pending_state(|state| {
+                    state.states.set(xdg_toplevel::State::Fullscreen);
+                    state.size = Some(geo.size);
+                    state.fullscreen_output = wl_output;
+                });
+            }
+        }
+    } */
+
+    fn maximize_request(&mut self, surface: smithay::wayland::shell::xdg::ToplevelSurface) {
+        let win = self.space.elements().find(|window| {
+            window.wl_surface().map(|s| &*s == surface.wl_surface()
+            ).unwrap_or(false)})
+            .cloned();
+        if win.is_none() {
+            surface.send_configure(); // send configure, done or not
+            return
+        }
+        let win = win.unwrap(); // unwrap is safe here
+        let bind = self.space.outputs_for_element(&win);
+        let output = bind.first().or_else(|| self.space.outputs().next()).expect("Error, no outputs found");
+        let geo = self.space.output_geometry(output);
+        if geo.is_none() {
+            surface.send_configure(); // send configure, done or not
+            return
+        }
+        let geo = geo.unwrap(); // unwrap is safe here
+        surface.with_pending_state(|state| {
+            state.states.set(xdg_toplevel::State::Maximized);
+            state.size = Some(geo.size)
+        });
+        self.space.map_element(win, geo.loc, true);
+        surface.send_configure(); // send configure, done or not
+    }
+
+    fn unmaximize_request(&mut self, surface: smithay::wayland::shell::xdg::ToplevelSurface) {
+        surface.with_pending_state(|state| {
+            state.states.unset(xdg_toplevel::State::Maximized);
+            state.size = None
+        });
+        // TODO: store where moved to, then when unmaximized, move there
+        surface.send_configure(); // send configure, done or not
     }
 }
 
