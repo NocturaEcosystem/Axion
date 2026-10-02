@@ -1,9 +1,10 @@
 use std::{cell::RefCell, default};
 
 use bitflags::bitflags;
-use smithay::{desktop::{Space, Window}, input::pointer::{GrabStartData, PointerGrab}, reexports::{wayland_protocols::xdg::shell::server::xdg_toplevel::ResizeEdge, wayland_server::protocol::wl_surface::WlSurface}, utils::{Logical, Rectangle, Size, Point}, wayland::{compositor, seat::WaylandFocus, shell::xdg::SurfaceCachedState}};
+use smithay::{desktop::{Space, Window}, input::pointer::{GrabStartData, PointerGrab}, reexports::{wayland_protocols::xdg::shell::server::xdg_toplevel::ResizeEdge, wayland_server::protocol::wl_surface::WlSurface}, utils::{Logical, Point, Rectangle, Scale, Size}, wayland::{compositor, seat::WaylandFocus, shell::xdg::SurfaceCachedState}};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State;
 use crate::state::NocturaStates;
+use smithay::reexports::wayland_server::Resource;
 bitflags! {
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
     pub struct Edge: u32 {
@@ -287,6 +288,13 @@ impl PointerGrab<NocturaStates> for resizingSurface {
         ));
 
         self.updated_window_size = updated_size;
+
+        let decore = data.decoration_manager.getSurfaceDecore(&self.win.wl_surface().unwrap().id()).unwrap();
+        let phys_size = updated_size.to_f64().to_physical(Scale::from(data.space.outputs().next().unwrap().current_scale().fractional_scale()));
+        let phys_size: Size<u32, smithay::utils::Physical> = phys_size.to_i32_round();
+        decore.changeSize(phys_size);
+        decore.states();
+
         
         self.win.toplevel().unwrap().with_pending_state(|state| {
             state.states.set(State::Resizing);

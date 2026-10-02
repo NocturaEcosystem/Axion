@@ -131,3 +131,29 @@ function in the trait `XdgShellHandler`
 compositor_impls.rs  -  🟡 Changed
 
 ```
+---
+# ⭐ New Feature / 📁 Architecture change - V-1-1-5
+
+**Time**: 02/10/2026 - 07:37 PM
+**Status**: 🌗 Partially Complete
+
+## Summary
+Added tacking features via updating position on grabs
+
+## Notice
+The architecture works like this:
+
+Decoration manager -> tracks many Decores
+when move/resize happens:
+ask Decoration manager for decoration state for the respective window
+Decoration manager stores the key as the surfaces ID
+
+## Things that were added/changed
+```
+decore_impls.rs   -  🟢 Added
+state.rs          -  🟡 Changed
+move_window.rs    -  🟡 Changed
+resize_window.rs  -  🟡 Changed
+main.slint        -  🟢 Added
+
+```

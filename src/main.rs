@@ -11,6 +11,7 @@ use tracing_subscriber;
 
 /* MAIN FUNCTION */
 fn main() -> Result<(), Box<dyn std::error::Error>>  {
+    println!("hre");
     tracing_subscriber::fmt().compact().init(); // set up tracing (it gives you further information
 //                                                 about whats happening ins the code, you can think of it
 //                                                 like a an auto println! log machine)

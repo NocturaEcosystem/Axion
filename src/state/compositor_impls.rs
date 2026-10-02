@@ -1,16 +1,18 @@
 use std::{cell::RefCell, process::id, sync::Arc, time::Duration};
 
 use calloop::{EventLoop};
-use smithay::{backend::{input::{AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputEvent, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent}, renderer::{self, damage::OutputDamageTracker, element::{AsRenderElements, surface::WaylandSurfaceRenderElement}, utils::on_commit_buffer_handler}, winit::{self, WinitEvent, WinitGraphicsBackend, WinitInput}}, delegate_compositor, delegate_data_control, delegate_data_device, delegate_fractional_scale, delegate_keyboard_shortcuts_inhibit, delegate_output, delegate_primary_selection, delegate_seat, delegate_shm, delegate_single_pixel_buffer, delegate_viewporter, delegate_xdg_activation, delegate_xdg_foreign, delegate_xdg_shell, desktop::{PopupManager, Space, Window, WindowSurfaceType, space}, input::{Seat, SeatHandler, SeatState, keyboard::FilterResult, pointer::{AxisFrame, ButtonEvent, CursorImageStatus, Focus, MotionEvent}}, output::{Mode, Output, PhysicalProperties}, reexports::{ash::khr::display, wayland_protocols::xdg::shell::server::{xdg_popup::Event::Configure, xdg_toplevel}, wayland_server::{Client, Display, Resource, backend::Backend, protocol::{wl_buffer, wl_surface::WlSurface}}, winit::keyboard, x11rb::protocol::randr::Output as otherOutput}, utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Scale, Transform::Flipped180}, wayland::{buffer::BufferHandler, compositor::{self, CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface}, fractional_scale::{FractionalScaleHandler, FractionalScaleManagerState}, keyboard_shortcuts_inhibit::{KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState}, output::{OutputHandler, OutputManagerState}, seat::WaylandFocus, selection::{SelectionHandler, data_device::{self, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDnDGrab, ServerDndGrabHandler}, primary_selection::{PrimarySelectionHandler, PrimarySelectionState}, wlr_data_control::{DataControlHandler, DataControlState}}, shell::xdg::{XdgShellHandler, XdgShellState}, shm::{ShmHandler, ShmState}, single_pixel_buffer::SinglePixelBufferState, socket::ListeningSocketSource, viewporter::ViewporterState, xdg_activation::{XdgActivationHandler, XdgActivationState}, xdg_foreign::{XdgForeignHandler, XdgForeignState}}, xwayland::xwm::WmWindowProperty::WindowType};
+use smithay::{backend::{input::{AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputEvent, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent}, renderer::{self, damage::OutputDamageTracker, element::{AsRenderElements, surface::WaylandSurfaceRenderElement}, utils::on_commit_buffer_handler}, winit::{self, WinitEvent, WinitGraphicsBackend, WinitInput}}, delegate_compositor, delegate_data_control, delegate_data_device, delegate_fractional_scale, delegate_keyboard_shortcuts_inhibit, delegate_output, delegate_primary_selection, delegate_seat, delegate_shm, delegate_single_pixel_buffer, delegate_viewporter, delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_foreign, delegate_xdg_shell, desktop::{PopupManager, Space, Window, WindowSurfaceType, space}, input::{Seat, SeatHandler, SeatState, keyboard::FilterResult, pointer::{AxisFrame, ButtonEvent, CursorImageStatus, Focus, MotionEvent}}, output::{Mode, Output, PhysicalProperties}, reexports::{ash::khr::display, wayland_protocols::xdg::shell::server::{xdg_popup::Event::Configure, xdg_toplevel}, wayland_server::{Client, Display, Resource, backend::Backend, protocol::{wl_buffer, wl_surface::WlSurface}}, winit::keyboard, x11rb::protocol::randr::Output as otherOutput}, utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Scale, Transform::Flipped180}, wayland::{buffer::BufferHandler, compositor::{self, CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface}, fractional_scale::{FractionalScaleHandler, FractionalScaleManagerState}, keyboard_shortcuts_inhibit::{KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState}, output::{OutputHandler, OutputManagerState}, seat::WaylandFocus, selection::{SelectionHandler, data_device::{self, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDnDGrab, ServerDndGrabHandler}, primary_selection::{PrimarySelectionHandler, PrimarySelectionState}, wlr_data_control::{DataControlHandler, DataControlState}}, shell::xdg::{XdgShellHandler, XdgShellState, decoration::{XdgDecorationHandler, XdgDecorationState}}, shm::{ShmHandler, ShmState}, single_pixel_buffer::SinglePixelBufferState, socket::ListeningSocketSource, viewporter::ViewporterState, xdg_activation::{XdgActivationHandler, XdgActivationState}, xdg_foreign::{XdgForeignHandler, XdgForeignState}}, xwayland::xwm::WmWindowProperty::WindowType};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode as xdgDecorationMode;
 
 use tracing::{warn, info};
 
-use crate::{state::{NocturaCursor, NocturaStates, cursor_impls::PointerRenderElement}, utils::{move_window::MovingSurface, resize_window::{Edge, ResizingSurfaceStates, resizingSurface}, unconstrain_popups}};
+use crate::{state::{DecorationManager, NocturaCursor, NocturaStates, cursor_impls::PointerRenderElement}, utils::{move_window::MovingSurface, resize_window::{Edge, ResizingSurfaceStates, resizingSurface}, unconstrain_popups}};
 use crate::state::NocturaClients;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State;
+use slint;
 
+slint::include_modules!();
 
 
 // Traits:
@@ -100,6 +102,18 @@ impl DataDeviceHandler for NocturaStates {
 impl ClientDndGrabHandler for NocturaStates {}
 impl ServerDndGrabHandler for NocturaStates {}
 
+impl XdgDecorationHandler for NocturaStates {
+    fn new_decoration(&mut self, toplevel: smithay::wayland::shell::xdg::ToplevelSurface) {
+        //
+    }
+    fn request_mode(&mut self, toplevel: smithay::wayland::shell::xdg::ToplevelSurface, mode: xdgDecorationMode) {
+        //
+    }
+    fn unset_mode(&mut self, toplevel: smithay::wayland::shell::xdg::ToplevelSurface) {
+        //
+    }
+}
+
 impl XdgShellHandler for NocturaStates {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
         &mut self.xdg_state
@@ -108,6 +122,7 @@ impl XdgShellHandler for NocturaStates {
     fn new_toplevel(&mut self, surface: smithay::wayland::shell::xdg::ToplevelSurface) {
         surface.send_configure(); // sending configure is like telling the client to have x,y dimentions, be minimized/maximized.....
         let win = Window::new_wayland_window(surface);
+        self.decoration_manager.add_surface_for_window(win.wl_surface().unwrap().id());
         self.space.map_element(win, (10, 10), false);
     }
 
@@ -398,6 +413,7 @@ delegate_xdg_foreign!(NocturaStates);
 delegate_data_control!(NocturaStates);
 delegate_single_pixel_buffer!(NocturaStates);
 delegate_keyboard_shortcuts_inhibit!(NocturaStates);
+delegate_xdg_decoration!(NocturaStates);
 
 
 // My own implementations:
@@ -460,6 +476,8 @@ impl NocturaStates {
         let data_cs = DataControlState::new::<Self, _>(&dh, Some(&primary_selection), |_client| {true});
         let single_pixle_buff = SinglePixelBufferState::new::<Self>(&dh);
         let shortcut_inhibitor = KeyboardShortcutsInhibitState::new::<Self>(&dh);
+        let xdg_decoration_state = XdgDecorationState::new::<Self>(&dh);
+        let decoration_manager = DecorationManager::new();
 
 
 
@@ -505,7 +523,9 @@ impl NocturaStates {
             xdg_fs,
             data_cs,
             single_pixle_buff,
-            shortcut_inhibitor
+            shortcut_inhibitor,
+            xdg_decoration_state,
+            decoration_manager
         }
     }
 
@@ -685,7 +705,7 @@ impl NocturaStates {
                     let render_res = backend.bind().and_then(|(renderer, mut framebuffer)| {
                         pointer.current_delay(state.time.elapsed());
                         pointer.cs = state.cs.clone();
-                            let scale = Scale::from(output.current_scale().fractional_scale());
+                        let scale = Scale::from(output.current_scale().fractional_scale());
                         let cp = state.pointerPos;
                         let cps = cp.to_physical(scale).to_i32_round();
                         let mut elements = Vec::<PointerRenderElement<GlesRenderer>>::new();

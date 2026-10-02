@@ -2,10 +2,10 @@
    WILL BE IN ANOTHER FILE
 */
 
-use std::{collections::BTreeMap, ffi::OsString};
+use std::{collections::{BTreeMap, HashMap}, ffi::OsString, hash::Hash};
 
 use calloop::{EventLoop, LoopHandle, LoopSignal};
-use smithay::{backend::renderer::{Texture, element::texture::TextureBuffer}, desktop::{PopupManager, Space, Window}, input::{Seat, SeatState, pointer::CursorImageStatus}, reexports::{ash::vk::Display, wayland_server::DisplayHandle}, utils::{Logical, Point}, wayland::{compositor::{CompositorClientState, CompositorState}, fractional_scale::FractionalScaleManagerState, keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState, output::OutputManagerState, selection::{data_device::DataDeviceState, primary_selection::PrimarySelectionState, wlr_data_control::DataControlState}, shell::xdg::XdgShellState, shm::ShmState, single_pixel_buffer::SinglePixelBufferState, socket::ListeningSocketSource, viewporter::ViewporterState, xdg_activation::XdgActivationState, xdg_foreign::XdgForeignState}};
+use smithay::{backend::renderer::{Texture, element::texture::TextureBuffer}, desktop::{PopupManager, Space, Window}, input::{Seat, SeatState, pointer::CursorImageStatus}, reexports::{ash::vk::Display, wayland_server::DisplayHandle}, utils::{Logical, Point}, wayland::{compositor::{CompositorClientState, CompositorState}, fractional_scale::FractionalScaleManagerState, keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState, output::OutputManagerState, selection::{data_device::DataDeviceState, primary_selection::PrimarySelectionState, wlr_data_control::DataControlState}, shell::xdg::{XdgShellState, decoration::XdgDecorationState}, shm::ShmState, single_pixel_buffer::SinglePixelBufferState, socket::ListeningSocketSource, viewporter::ViewporterState, xdg_activation::XdgActivationState, xdg_foreign::XdgForeignState}};
 // activate our implementations
 
 mod compositor_impls;
@@ -32,8 +32,9 @@ pub struct NocturaStates {    // this will contain data about our compositor as 
     pub xdg_fs: XdgForeignState,
     pub data_cs: DataControlState,
     pub single_pixle_buff: SinglePixelBufferState,
-    pub shortcut_inhibitor: KeyboardShortcutsInhibitState
-
+    pub shortcut_inhibitor: KeyboardShortcutsInhibitState,
+    pub xdg_decoration_state: XdgDecorationState,
+    pub decoration_manager: DecorationManager,
 }
 
 mod client_impls;
@@ -48,6 +49,18 @@ pub struct NocturaCursor<T: Texture> {
     pub whole_stamp: u64,
     pub current_stamp: u64,
     pub map_of_image: BTreeMap<u64, TextureBuffer<T>>,
+}
+
+mod decore_impls;
+pub struct DecorationManager {
+    decores: HashMap<smithay::reexports::wayland_server::backend::ObjectId, decoration>
+}
+pub struct decoration {
+    width: u32,
+    height: u32,
+    x: u32,
+    y: u32,
+    title: String
 }
 
 

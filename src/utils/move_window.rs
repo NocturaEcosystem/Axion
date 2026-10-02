@@ -1,4 +1,4 @@
-use smithay::{desktop::Window, input::{pointer::GrabStartData, pointer::PointerGrab}, utils::{self, Logical}};
+use smithay::{desktop::Window, input::pointer::{GrabStartData, PointerGrab}, reexports::wayland_server::Resource, utils::{self, Logical, Scale}, wayland::seat::WaylandFocus};
 use crate::state::NocturaStates;
 pub struct MovingSurface {
     pub sd: GrabStartData<NocturaStates>,
@@ -116,6 +116,11 @@ impl PointerGrab<NocturaStates> for MovingSurface {
         handle.motion(data, None, event);
         let updated = event.location - self.sd.location;
         let new_loc = self.init_win.to_f64() + updated;
+        let mut decore = data.decoration_manager.getSurfaceDecore(&self.win.wl_surface().unwrap().id()).unwrap();
+        let phys_pos = new_loc.to_physical(Scale::from(data.space.outputs().next().unwrap().current_scale().fractional_scale()));
+        let phys_pos: utils::Point<u32, utils::Physical> = phys_pos.to_i32_round();
+        decore.changePos(phys_pos);
+        decore.states();
         data.space.map_element(self.win.clone(), new_loc.to_i32_round(), true);
     }
 

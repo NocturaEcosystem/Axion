@@ -2,6 +2,7 @@
 name = "Axion"
 version = "1.1.0"
 edition = "2024"
+build = "build.rs"
 
 [dependencies]
 smithay = "0.7"
@@ -12,3 +13,7 @@ bitflags = "2.2.1"
 xcursor = "0.3.11"
 wayland-client = "0.31"
 wayland-protocols = { version = "0.31", features = ["unstable"] }
+slint = {version = "1.9", features = ["renderer-software"]}
+
+[build-dependencies]
+slint-build = "1.9"
