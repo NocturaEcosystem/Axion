@@ -4,6 +4,14 @@ version = "1.1.0"
 edition = "2024"
 build = "build.rs"
 
+[[bin]]
+name = "axion-compositor"
+path = "src/main.rs"
+
+[[bin]]
+name = "axion-decorator"
+path = "src/decorator_main.rs"
+
 [dependencies]
 smithay = "0.7"
 tracing = "0.1"

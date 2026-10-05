@@ -1,7 +1,7 @@
 use std::{cell::RefCell, process::id, sync::Arc, time::Duration};
 
 use calloop::{EventLoop};
-use smithay::{backend::{input::{AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputEvent, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent}, renderer::{self, damage::OutputDamageTracker, element::{AsRenderElements, surface::WaylandSurfaceRenderElement}, utils::on_commit_buffer_handler}, winit::{self, WinitEvent, WinitGraphicsBackend, WinitInput}}, delegate_compositor, delegate_data_control, delegate_data_device, delegate_fractional_scale, delegate_keyboard_shortcuts_inhibit, delegate_output, delegate_primary_selection, delegate_seat, delegate_shm, delegate_single_pixel_buffer, delegate_viewporter, delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_foreign, delegate_xdg_shell, desktop::{PopupManager, Space, Window, WindowSurfaceType, space}, input::{Seat, SeatHandler, SeatState, keyboard::FilterResult, pointer::{AxisFrame, ButtonEvent, CursorImageStatus, Focus, MotionEvent}}, output::{Mode, Output, PhysicalProperties}, reexports::{ash::khr::display, wayland_protocols::xdg::shell::server::{xdg_popup::Event::Configure, xdg_toplevel}, wayland_server::{Client, Display, Resource, backend::Backend, protocol::{wl_buffer, wl_surface::WlSurface}}, winit::keyboard, x11rb::protocol::randr::Output as otherOutput}, utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Scale, Transform::Flipped180}, wayland::{buffer::BufferHandler, compositor::{self, CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface}, fractional_scale::{FractionalScaleHandler, FractionalScaleManagerState}, keyboard_shortcuts_inhibit::{KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState}, output::{OutputHandler, OutputManagerState}, seat::WaylandFocus, selection::{SelectionHandler, data_device::{self, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDnDGrab, ServerDndGrabHandler}, primary_selection::{PrimarySelectionHandler, PrimarySelectionState}, wlr_data_control::{DataControlHandler, DataControlState}}, shell::xdg::{XdgShellHandler, XdgShellState, decoration::{XdgDecorationHandler, XdgDecorationState}}, shm::{ShmHandler, ShmState}, single_pixel_buffer::SinglePixelBufferState, socket::ListeningSocketSource, viewporter::ViewporterState, xdg_activation::{XdgActivationHandler, XdgActivationState}, xdg_foreign::{XdgForeignHandler, XdgForeignState}}, xwayland::xwm::WmWindowProperty::WindowType};
+use smithay::{backend::{input::{AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputEvent, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent}, renderer::{self, damage::OutputDamageTracker, element::{AsRenderElements, surface::WaylandSurfaceRenderElement}, utils::on_commit_buffer_handler}, winit::{self, WinitEvent, WinitGraphicsBackend, WinitInput}}, delegate_compositor, delegate_data_control, delegate_data_device, delegate_fractional_scale, delegate_keyboard_shortcuts_inhibit, delegate_output, delegate_primary_selection, delegate_seat, delegate_shm, delegate_single_pixel_buffer, delegate_viewporter, delegate_xdg_activation, delegate_xdg_decoration, delegate_xdg_foreign, delegate_xdg_shell, desktop::{PopupManager, Space, Window, WindowSurfaceType, space}, input::{Seat, SeatHandler, SeatState, keyboard::FilterResult, pointer::{AxisFrame, ButtonEvent, CursorImageStatus, Focus, MotionEvent}}, output::{Mode, Output, PhysicalProperties}, reexports::{ash::khr::display, wayland_protocols::xdg::shell::server::{xdg_popup::Event::Configure, xdg_toplevel}, wayland_server::{Client, Display, Resource, backend::Backend, protocol::{wl_buffer, wl_surface::WlSurface}}, winit::keyboard, x11rb::protocol::randr::Output as otherOutput}, utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Scale, Transform::Flipped180}, wayland::{buffer::BufferHandler, compositor::{self, CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface, with_states}, fractional_scale::{FractionalScaleHandler, FractionalScaleManagerState}, keyboard_shortcuts_inhibit::{KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState}, output::{OutputHandler, OutputManagerState}, seat::WaylandFocus, selection::{SelectionHandler, data_device::{self, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDnDGrab, ServerDndGrabHandler}, primary_selection::{PrimarySelectionHandler, PrimarySelectionState}, wlr_data_control::{DataControlHandler, DataControlState}}, shell::xdg::{XdgShellHandler, XdgShellState, XdgToplevelSurfaceRoleAttributes, decoration::{XdgDecorationHandler, XdgDecorationState}}, shm::{ShmHandler, ShmState}, single_pixel_buffer::SinglePixelBufferState, socket::ListeningSocketSource, viewporter::ViewporterState, xdg_activation::{XdgActivationHandler, XdgActivationState}, xdg_foreign::{XdgForeignHandler, XdgForeignState}}, xwayland::xwm::WmWindowProperty::WindowType};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode as xdgDecorationMode;
 
@@ -12,7 +12,6 @@ use crate::state::NocturaClients;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State;
 use slint;
 
-slint::include_modules!();
 
 
 // Traits:
@@ -121,8 +120,22 @@ impl XdgShellHandler for NocturaStates {
     
     fn new_toplevel(&mut self, surface: smithay::wayland::shell::xdg::ToplevelSurface) {
         surface.send_configure(); // sending configure is like telling the client to have x,y dimentions, be minimized/maximized.....
-        let win = Window::new_wayland_window(surface);
-        self.decoration_manager.add_surface_for_window(win.wl_surface().unwrap().id());
+        let win = Window::new_wayland_window(surface.clone());
+
+        let wl_surface = surface.wl_surface();
+        let mut draw_decorator = true;
+        if let Some(client) = wl_surface.client() {
+            if let Ok(creds) = client.get_credentials(&self.dh) {
+                let client_pid = creds.pid as u32;
+                if self.decoration_manager.pids.contains(&client_pid) {
+                    draw_decorator = false;
+                }
+            }
+        }
+        if draw_decorator {
+            self.decoration_manager.add_surface_for_window(surface.wl_surface().id());
+        }
+
         self.space.map_element(win, (10, 10), false);
     }
 

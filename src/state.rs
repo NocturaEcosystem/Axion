@@ -2,10 +2,11 @@
    WILL BE IN ANOTHER FILE
 */
 
-use std::{collections::{BTreeMap, HashMap}, ffi::OsString, hash::Hash};
+use std::{collections::{BTreeMap, HashMap}, ffi::OsString, hash::Hash, process::Child};
 
 use calloop::{EventLoop, LoopHandle, LoopSignal};
 use smithay::{backend::renderer::{Texture, element::texture::TextureBuffer}, desktop::{PopupManager, Space, Window}, input::{Seat, SeatState, pointer::CursorImageStatus}, reexports::{ash::vk::Display, wayland_server::DisplayHandle}, utils::{Logical, Point}, wayland::{compositor::{CompositorClientState, CompositorState}, fractional_scale::FractionalScaleManagerState, keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState, output::OutputManagerState, selection::{data_device::DataDeviceState, primary_selection::PrimarySelectionState, wlr_data_control::DataControlState}, shell::xdg::{XdgShellState, decoration::XdgDecorationState}, shm::ShmState, single_pixel_buffer::SinglePixelBufferState, socket::ListeningSocketSource, viewporter::ViewporterState, xdg_activation::XdgActivationState, xdg_foreign::XdgForeignState}};
+
 // activate our implementations
 
 mod compositor_impls;
@@ -53,14 +54,17 @@ pub struct NocturaCursor<T: Texture> {
 
 mod decore_impls;
 pub struct DecorationManager {
-    decores: HashMap<smithay::reexports::wayland_server::backend::ObjectId, decoration>
+    decores: HashMap<smithay::reexports::wayland_server::backend::ObjectId, decoration>,
+    pub pids: Vec<u32>
 }
 pub struct decoration {
     width: u32,
     height: u32,
     x: u32,
     y: u32,
-    title: String
+    title: String,
+    instance: bool,
+    child: Child
 }
 
 
