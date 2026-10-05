@@ -1,9 +1,9 @@
 use std::{collections::HashMap, process::{Command, Stdio}};
 
-use smithay::{reexports::wayland_server::{Resource, protocol::wl_surface::WlSurface}, utils::{Logical, Physical, Point, Size}};
+use smithay::{desktop::{Space, Window}, reexports::wayland_server::{Resource, protocol::wl_surface::WlSurface}, utils::{Logical, Physical, Point, Scale, Size}};
 use tracing::warn;
 
-use crate::state::{DecorationManager, decoration};
+use crate::state::{DecorationManager, NocturaStates, decoration};
 use slint::ComponentHandle; 
 
 use std::io::Write;
@@ -11,9 +11,11 @@ impl DecorationManager {
     pub fn new() -> Self {
         let mut decores = HashMap::<smithay::reexports::wayland_server::backend::ObjectId, decoration>::new();
         let mut pids = vec![];
+        let mut decore_surfaces = HashMap::<u32, Window>::new();
         Self {
             decores,
-            pids
+            pids,
+            decore_surfaces
         }
     }
 
@@ -36,6 +38,20 @@ impl DecorationManager {
     pub fn getSurfaceDecore(&mut self, id: &smithay::reexports::wayland_server::backend::ObjectId) -> Option<&mut decoration> {
         let val = self.decores.get_mut(&id);
         val
+    }
+
+    pub fn addWindowForPid(&mut self, id: u32, win: Window){
+        self.decore_surfaces.insert(id, win);
+    }
+    pub fn change_pos_for_decore(&self, id: u32, point: Point<f64, Logical>, space: &mut Space<Window>) {
+        let win = self.decore_surfaces.get(&id);
+        if let Some(win) = win {
+            let win = win.to_owned();
+            let point: Point<i32, Logical> = point.to_i32_round();
+            space.map_element(win, point, true);
+        } else {
+            println!("HERE")
+        }
     }
 }
 

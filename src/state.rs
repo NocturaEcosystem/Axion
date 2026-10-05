@@ -54,8 +54,9 @@ pub struct NocturaCursor<T: Texture> {
 
 mod decore_impls;
 pub struct DecorationManager {
-    decores: HashMap<smithay::reexports::wayland_server::backend::ObjectId, decoration>,
-    pub pids: Vec<u32>
+    pub decores: HashMap<smithay::reexports::wayland_server::backend::ObjectId, decoration>, // window: decoration
+    pub pids: Vec<u32>,
+    pub decore_surfaces: HashMap<u32, Window>
 }
 pub struct decoration {
     width: u32,
@@ -64,7 +65,7 @@ pub struct decoration {
     y: u32,
     title: String,
     instance: bool,
-    child: Child
+    pub child: Child
 }
 
 

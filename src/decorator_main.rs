@@ -1,5 +1,6 @@
 use std::io::{self, BufRead};
 
+use smithay::wayland::shell::xdg;
 use tracing::warn;
 slint::include_modules!();
 
@@ -8,7 +9,6 @@ fn main() {
         std::env::set_var("WAYLAND_DISPLAY", "wayland-2");
     }
     let decore = TestPreview::new().unwrap();
-    slint::set_xdg_app_id("org.example.AxionDecorator").unwrap();
     decore.set_window_title("No title".into());
     let decore_handle = decore.as_weak();
     std::thread::spawn(move || {
@@ -25,13 +25,15 @@ fn main() {
                         }
                     }).unwrap();
                 } else if let Some(new_pos) = request.strip_prefix("SET_POS:") {
+                    // Dosent work, but still written for future developers/explorers
                     if let Some((x, y)) = new_pos.split_once(":") {
                         if let (Ok(x), Ok(y)) = (x.parse::<i32>(), y.parse::<i32>()) {
-                            let _ = slint::invoke_from_event_loop( move || {
+                            let xdg = slint::invoke_from_event_loop( move || {
                                 if let Some(ui) = handle.upgrade() {
                                     ui.window().set_position(slint::PhysicalPosition::new(x, y));
                                 }
                             });
+                            println!("xdf: {:?}", xdg);
                         }
                     }
                 } else if let Some(new_w) = request.strip_prefix("SET_WIDTH:") {

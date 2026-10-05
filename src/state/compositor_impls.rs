@@ -129,6 +129,8 @@ impl XdgShellHandler for NocturaStates {
                 let client_pid = creds.pid as u32;
                 if self.decoration_manager.pids.contains(&client_pid) {
                     draw_decorator = false;
+                    self.decoration_manager.addWindowForPid(client_pid, win.clone());
+                    
                 }
             }
         }

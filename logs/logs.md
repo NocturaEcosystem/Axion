@@ -157,3 +157,29 @@ resize_window.rs  -  🟡 Changed
 main.slint        -  🟢 Added
 
 ```
+---
+# ⭐ New Feature / 📁 Architecture change - V-1-1-6
+
+**Time**: 05/10/2026 - 11:13 PM
+**Status**: 🌗 Partially Complete
+
+## Summary
+- Made the decorator move and follow clients (Including CSD)
+
+## Notice
+The positioning will be changed a little, because the decorator stays directly behind the client (they share the same origin)
+The decorator will be later made to only support SSD
+The decorators minimize/maximize/close function will be added later
+The decorator manager deals with positioning and is more **closer to smithay related work**
+The decorator itself deals with **Slint and state managing related work**
+
+## Things that were added/changed
+```
+state.rs             -  🟡 Changed
+decorator_main.rs    -  🟡 Changed
+compositor_impls.rs  -  🟡 Changed
+decore_impls.rs      -  🟡 Changed
+move_window.rs       -  🟡 Changed
+resize_window.rs     -  🟡 Changed
+
+```
