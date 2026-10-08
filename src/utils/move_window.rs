@@ -116,19 +116,21 @@ impl PointerGrab<NocturaStates> for MovingSurface {
         handle.motion(data, None, event);
         let updated = event.location - self.sd.location;
         let new_loc = self.init_win.to_f64() + updated;
-        let phys_pos = new_loc.to_physical(Scale::from(data.space.outputs().next().unwrap().current_scale().fractional_scale()));
-        let phys_pos: utils::Point<u32, utils::Physical> = phys_pos.to_i32_round();
+        if data.decoration_manager.ssdSession(&self.win.wl_surface().unwrap().id()) {
+            let phys_pos = new_loc.to_physical(Scale::from(data.space.outputs().next().unwrap().current_scale().fractional_scale()));
+            let phys_pos: utils::Point<u32, utils::Physical> = phys_pos.to_i32_round();
 
-        let dm = &mut data.decoration_manager;
-        let id;
-        {
-            let decore = dm.getSurfaceDecore(&self.win.wl_surface().unwrap().id()).unwrap();
-            decore.changePos(phys_pos);
-            decore.states();
-            id = decore.child.id();
+            let dm = &mut data.decoration_manager;
+            let id;
+            {
+                let decore = dm.getSurfaceDecore(&self.win.wl_surface().unwrap().id()).unwrap();
+                decore.changePos(phys_pos);
+                decore.states();
+                id = decore.child.id();
+            }
+
+            dm.change_pos_for_decore(id, new_loc, &mut data.space);
         }
-
-        dm.change_pos_for_decore(id, new_loc, &mut data.space);
         data.space.map_element(self.win.clone(), new_loc.to_i32_round(), true);
     }
 

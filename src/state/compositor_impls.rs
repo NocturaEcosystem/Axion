@@ -101,18 +101,70 @@ impl DataDeviceHandler for NocturaStates {
 impl ClientDndGrabHandler for NocturaStates {}
 impl ServerDndGrabHandler for NocturaStates {}
 
-impl XdgDecorationHandler for NocturaStates {
-    fn new_decoration(&mut self, toplevel: smithay::wayland::shell::xdg::ToplevelSurface) {
-        //
-    }
-    fn request_mode(&mut self, toplevel: smithay::wayland::shell::xdg::ToplevelSurface, mode: xdgDecorationMode) {
-        //
-    }
-    fn unset_mode(&mut self, toplevel: smithay::wayland::shell::xdg::ToplevelSurface) {
-        //
+impl NocturaStates {
+    fn setup_server_side_decoration(&mut self, toplevel: &smithay::wayland::shell::xdg::ToplevelSurface) {
+        let wl_surface = toplevel.wl_surface();
+        let surface_id = wl_surface.id();
+        if self.decoration_manager.ssdSession(&surface_id) {
+            return;
+        }
+        let win = Window::new_wayland_window(toplevel.clone());
+        let mut draw_decorator = true;
+
+        if let Some(client) = wl_surface.client() {
+            if let Ok(creds) = client.get_credentials(&self.dh) {
+                let client_pid = creds.pid as u32;
+                if self.decoration_manager.pids.contains(&client_pid) {
+                    draw_decorator = false;
+                    self.decoration_manager.addWindowForPid(client_pid, win);
+                }
+            }
+        }
+
+        if draw_decorator {
+            self.decoration_manager.add_surface_for_window(surface_id);
+        }
     }
 }
 
+impl XdgDecorationHandler for NocturaStates {
+    fn new_decoration(&mut self, toplevel: smithay::wayland::shell::xdg::ToplevelSurface) {
+        println!("DEBUG: {}   \n{:?}", toplevel.wl_surface().id(), self.decoration_manager.pids);
+        
+        self.setup_server_side_decoration(&toplevel);
+
+        toplevel.with_pending_state(|state| {
+            state.decoration_mode = Some(xdgDecorationMode::ServerSide);
+        });
+        toplevel.send_configure();
+    }
+
+    fn request_mode(&mut self, surface: smithay::wayland::shell::xdg::ToplevelSurface, mode: xdgDecorationMode) {
+        match mode {
+            xdgDecorationMode::ClientSide => {
+                if self.decoration_manager.ssdSession(&surface.wl_surface().id()) {
+                    self.decoration_manager.delete_decore(&surface.wl_surface().id());
+                }
+            },
+            xdgDecorationMode::ServerSide => {
+                self.setup_server_side_decoration(&surface);
+            },
+            _ => {}
+        }
+
+        surface.with_pending_state(|state| {
+            state.decoration_mode = Some(mode);
+        });
+        surface.send_configure();
+    }
+
+    fn unset_mode(&mut self, toplevel: smithay::wayland::shell::xdg::ToplevelSurface) {
+        toplevel.with_pending_state(|state| {
+            state.decoration_mode = Some(xdgDecorationMode::ServerSide);
+        });
+        toplevel.send_configure();
+    }
+}
 impl XdgShellHandler for NocturaStates {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
         &mut self.xdg_state
@@ -121,24 +173,7 @@ impl XdgShellHandler for NocturaStates {
     fn new_toplevel(&mut self, surface: smithay::wayland::shell::xdg::ToplevelSurface) {
         surface.send_configure(); // sending configure is like telling the client to have x,y dimentions, be minimized/maximized.....
         let win = Window::new_wayland_window(surface.clone());
-
-        let wl_surface = surface.wl_surface();
-        let mut draw_decorator = true;
-        if let Some(client) = wl_surface.client() {
-            if let Ok(creds) = client.get_credentials(&self.dh) {
-                let client_pid = creds.pid as u32;
-                if self.decoration_manager.pids.contains(&client_pid) {
-                    draw_decorator = false;
-                    self.decoration_manager.addWindowForPid(client_pid, win.clone());
-                    
-                }
-            }
-        }
-        if draw_decorator {
-            self.decoration_manager.add_surface_for_window(surface.wl_surface().id());
-        }
-
-        self.space.map_element(win, (10, 10), false);
+        self.space.map_element(win, (100, 50), false);
     }
 
     fn new_popup(&mut self, surface: smithay::wayland::shell::xdg::PopupSurface, positioner: smithay::wayland::shell::xdg::PositionerState) {
@@ -336,8 +371,8 @@ impl XdgShellHandler for NocturaStates {
     fn show_window_menu(&mut self, _surface: smithay::wayland::shell::xdg::ToplevelSurface, _seat: smithay::reexports::wayland_server::protocol::wl_seat::WlSeat, _serial: smithay::utils::Serial, _location: Point<i32, Logical>){
         // TODO: implement decorator logic here
     }
-    fn toplevel_destroyed(&mut self, _surface: smithay::wayland::shell::xdg::ToplevelSurface) {
-        //
+    fn toplevel_destroyed(&mut self, surface: smithay::wayland::shell::xdg::ToplevelSurface) {
+        self.decoration_manager.delete_decore(&surface.wl_surface().id());
     }
 
 }

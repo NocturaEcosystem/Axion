@@ -289,17 +289,30 @@ impl PointerGrab<NocturaStates> for resizingSurface {
 
         self.updated_window_size = updated_size;
 
-        let decore = data.decoration_manager.getSurfaceDecore(&self.win.wl_surface().unwrap().id()).unwrap();
-        let phys_size = updated_size.to_f64().to_physical(Scale::from(data.space.outputs().next().unwrap().current_scale().fractional_scale()));
-        let phys_size: Size<u32, smithay::utils::Physical> = phys_size.to_i32_round();
-        decore.changeSize(phys_size);
-        decore.states();
+
 
         
         self.win.toplevel().unwrap().with_pending_state(|state| {
             state.states.set(State::Resizing);
             state.size = Some(self.updated_window_size);
         });
+        if data.decoration_manager.ssdSession(&self.win.wl_surface().unwrap().id()) {
+            let loc = data.space.element_location(&self.win);
+            
+            if let Some(loc) = loc {
+                let dm = &mut data.decoration_manager;
+                let id;
+                {
+                    let decore = dm.getSurfaceDecore(&self.win.wl_surface().unwrap().id()).unwrap();
+                    let phys_size = updated_size.to_f64().to_physical(Scale::from(data.space.outputs().next().unwrap().current_scale().fractional_scale()));
+                    let phys_size: Size<u32, smithay::utils::Physical> = phys_size.to_i32_round();
+                    decore.changeSize(phys_size);
+                    decore.states();
+                    id = decore.child.id();
+                }
+                dm.change_pos_for_decore(id, loc.to_f64(), &mut data.space);
+            }
+        }
         self.win.toplevel().unwrap().send_pending_configure();
 
     }

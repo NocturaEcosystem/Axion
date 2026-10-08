@@ -19,16 +19,14 @@ impl DecorationManager {
         }
     }
 
+    pub fn ssdSession(&self, id: &smithay::reexports::wayland_server::backend::ObjectId) -> bool {
+        !(self.decores.get(id).is_none())
+    }
+
     pub fn add_surface_for_window(&mut self, id: smithay::reexports::wayland_server::backend::ObjectId) {
         let decore_pid = decoration::new();
         self.pids.push(decore_pid.1);
         self.decores.insert(id, decore_pid.0);
-    }
-
-    pub fn change_title(&mut self, id: &smithay::reexports::wayland_server::backend::ObjectId, title: String) {
-        if let Some(val) = self.decores.get_mut(id) {
-            val.title = title;
-        }
     }
 
     pub fn delete_decore(&mut self, id: &smithay::reexports::wayland_server::backend::ObjectId) {
@@ -47,10 +45,13 @@ impl DecorationManager {
         let win = self.decore_surfaces.get(&id);
         if let Some(win) = win {
             let win = win.to_owned();
-            let point: Point<i32, Logical> = point.to_i32_round();
+            let scale = space.outputs().next().unwrap().current_scale().fractional_scale();
+            let point = point.to_physical(scale);
+            let mut point: Point<i32, Logical> = point.to_logical(scale).to_i32_round();
+            point.y -= 12;
+            win.clone().override_z_index(255);
             space.map_element(win, point, true);
-        } else {
-            println!("HERE")
+            
         }
     }
 }

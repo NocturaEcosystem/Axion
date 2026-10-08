@@ -183,3 +183,22 @@ move_window.rs       -  🟡 Changed
 resize_window.rs     -  🟡 Changed
 
 ```
+---
+# ⭐ New Feature - V-1-1-7
+
+**Time**: 08/10/2026 - 07:56 PM
+**Status**: 🌗 Partially Complete
+
+## Summary
+Clients can now use XDG::DECORATION and arn't forced to use SSD
+
+## Notice
+The decorator is broken right now, will fix on next update
+
+## Things that were added/changed
+```
+decore_impls.rs                  -  🟡 Changed
+compositor_impls.rs              -  🟡 Changed
+move_window.rs/resize_window.rs  -  🟡 Changed
+
+```

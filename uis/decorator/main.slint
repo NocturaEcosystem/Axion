@@ -42,7 +42,6 @@ export component TestPreview inherits Window {
     in property <brush> textColor: rgba(221, 221, 221);
     in property <length> w: 500px;
     always-on-top: true;
-    no-frame: true;
     
     background: transparent;
     
@@ -51,7 +50,6 @@ export component TestPreview inherits Window {
 
     WindowDecorator {
         width: parent.width;
-        height: parent.height;
         window-title: root.window-title;
         textColor: root.textColor;
     }
